@@ -3,6 +3,7 @@ import sys
 import yaml
 
 from app.commands import doctor
+from app.commands import scan
 
 
 CONFIG = os.environ.get(
@@ -27,5 +28,8 @@ if len(sys.argv) > 1:
         doctor.run(config)
         sys.exit(0)
 
+    if command == "scan":
+        scan.run(config)
+        sys.exit(0)
 
 print("reddit-stash-agent is running...")
