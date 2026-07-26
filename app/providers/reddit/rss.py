@@ -36,7 +36,6 @@ def get_rss_url(source_type, source_name):
     return None
 
 
-
 def fetch_posts(source_type, source_name):
 
     url = get_rss_url(
@@ -48,6 +47,12 @@ def fetch_posts(source_type, source_name):
         return []
 
 
+    print(
+        "RSS:",
+        url
+    )
+
+
     cookie = load_cookie_header(
         "/config/reddit-cookies.json"
     )
@@ -57,8 +62,14 @@ def fetch_posts(source_type, source_name):
         url,
         request_headers={
             "Cookie": cookie,
-            "User-Agent": "reddit-stash-agent/0.1"
+            "User-Agent": "Mozilla/5.0 reddit-stash-agent/0.1"
         }
+    )
+
+
+    print(
+        "Entries:",
+        len(feed.entries)
     )
 
 
@@ -67,27 +78,31 @@ def fetch_posts(source_type, source_name):
 
     for entry in feed.entries:
 
+        print(
+            "TITLE:",
+            entry.get("title")
+        )
+
+
         reddit_id = entry.get(
             "id",
             ""
         ).split("/")[-1]
 
 
-        if not reddit_id.startswith("t3_"):
-            continue
-
-
-        posts.append(
-            {
-                "reddit_id": reddit_id,
-                "title": entry.get("title"),
-                "url": entry.get("link"),
-                "published": entry.get(
-                    "published",
-                    ""
-                )
-            }
-        )
+        if reddit_id.startswith("t3_"):
+            
+            posts.append(
+                {
+                    "reddit_id": reddit_id,
+                    "title": entry.get("title"),
+                    "url": entry.get("link"),
+                    "published": entry.get(
+                        "published",
+                        ""
+                    )
+                }
+            )
 
 
     return posts
