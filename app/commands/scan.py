@@ -1,5 +1,7 @@
 from app.stash.client import StashClient
 from app.reddit.parser import parse_reddit_urls
+from app.database.database import SessionLocal
+from app.database.models import RedditSource
 
 
 def run(config):
@@ -9,13 +11,16 @@ def run(config):
         config["stash"]["api_key"]
     )
 
+    db = SessionLocal()
+
     performers = stash.get_performers()
 
     print()
-    print("Reddit sources found:")
+    print("Scanning Stash performers...")
     print()
 
-    count = 0
+    added = 0
+    skipped = 0
 
     for performer in performers:
 
@@ -23,21 +28,50 @@ def run(config):
             performer.get("urls")
         )
 
-        if sources:
+        for source in sources:
 
-            count += 1
+            existing = db.query(RedditSource).filter_by(
+                performer_id=performer["id"],
+                source_type=source["type"],
+                source_name=source["name"]
+            ).first()
+
+
+            if existing:
+
+                skipped += 1
+
+                print(
+                    f"✓ {performer['name']}"
+                    f" - {source['type']}:{source['name']}"
+                    " (exists)"
+                )
+
+                continue
+
+
+            reddit_source = RedditSource(
+                performer_id=performer["id"],
+                source_type=source["type"],
+                source_name=source["name"]
+            )
+
+            db.add(reddit_source)
+
+            added += 1
 
             print(
                 f"✓ {performer['name']}"
+                f" - {source['type']}:{source['name']}"
+                " (saved)"
             )
 
-            for source in sources:
-                print(
-                    f"   {source['type']}: {source['name']}"
-                )
+
+    db.commit()
+    db.close()
 
 
     print()
-    print(
-        f"Total: {count} performers"
-    )
+    print("Database update complete")
+    print(f"Added: {added}")
+    print(f"Skipped: {skipped}")
