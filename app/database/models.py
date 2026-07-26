@@ -35,33 +35,28 @@ class RedditPost(Base):
 
     __tablename__ = "reddit_posts"
 
-    id = Column(
-        Integer,
-        primary_key=True
-    )
+    id = Column(Integer, primary_key=True)
 
     reddit_id = Column(
         String,
         unique=True,
-        index=True,
         nullable=False
     )
 
-    source = Column(
-        String
-    )
+    source = Column(String)
 
-    url = Column(
-        String
-    )
+    url = Column(String)
 
-    title = Column(
-        String
-    )
+    title = Column(String)
 
     downloaded = Column(
         Boolean,
         default=False
+    )
+
+    download_path = Column(
+        String,
+        nullable=True
     )
 
     created_at = Column(
