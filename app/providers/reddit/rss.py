@@ -74,7 +74,7 @@ def fetch_posts(source_type, source_name):
 
 
     posts = []
-
+    seen = set()
 
     for entry in feed.entries:
 
@@ -84,25 +84,42 @@ def fetch_posts(source_type, source_name):
         )
 
 
-        reddit_id = entry.get(
-            "id",
-            ""
-        ).split("/")[-1]
+        reddit_id = None
 
 
-        if reddit_id.startswith("t3_"):
-            
-            posts.append(
-                {
-                    "reddit_id": reddit_id,
-                    "title": entry.get("title"),
-                    "url": entry.get("link"),
-                    "published": entry.get(
-                        "published",
-                        ""
-                    )
-                }
-            )
+        if "reddit.com" in entry.get("link", ""):
+
+            parts = entry["link"].split("/")
+
+            if "comments" in parts:
+
+                index = parts.index("comments")
+
+                if len(parts) > index + 1:
+                    reddit_id = "t3_" + parts[index + 1]
+
+
+        if not reddit_id:
+            continue
+
+
+        if reddit_id in seen:
+            continue
+
+        seen.add(reddit_id)
+
+        posts.append(
+            {
+
+                "reddit_id": reddit_id,
+                "title": entry.get("title"),
+                "url": entry.get("link"),
+                "published": entry.get(
+                    "published",
+                    ""
+                )
+            }
+        )
 
 
     return posts
