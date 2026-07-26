@@ -1,17 +1,31 @@
-from rich import print
-import yaml
 import os
-import time
+import sys
+import yaml
 
-CONFIG = os.environ.get("CONFIG_FILE", "/config/config.yaml")
+from app.commands import doctor
+
+
+CONFIG = os.environ.get(
+    "CONFIG_FILE",
+    "/config/config.yaml"
+)
+
 
 with open(CONFIG) as f:
-    cfg = yaml.safe_load(f)
+    config = yaml.safe_load(f)
 
-print("[green]✓ Configuration loaded[/green]")
-print(cfg)
 
-print("[cyan]reddit-stash-agent is running...[/cyan]")
+print("✓ Configuration loaded")
+print(config)
 
-while True:
-    time.sleep(60)
+
+if len(sys.argv) > 1:
+
+    command = sys.argv[1]
+
+    if command == "doctor":
+        doctor.run(config)
+        sys.exit(0)
+
+
+print("reddit-stash-agent is running...")
