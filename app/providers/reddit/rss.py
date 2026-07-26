@@ -1,4 +1,22 @@
 import feedparser
+import json
+
+
+def load_cookie_header(path):
+
+    try:
+        with open(path) as f:
+            cookies = json.load(f)
+
+        return "; ".join(
+            [
+                f"{c['name']}={c['value']}"
+                for c in cookies
+            ]
+        )
+
+    except Exception:
+        return ""
 
 
 def get_rss_url(source_type, source_name):
@@ -30,9 +48,17 @@ def fetch_posts(source_type, source_name):
         return []
 
 
+    cookie = load_cookie_header(
+        "/config/reddit-cookies.json"
+    )
+
+
     feed = feedparser.parse(
         url,
-        agent="reddit-stash-agent/0.1"
+        request_headers={
+            "Cookie": cookie,
+            "User-Agent": "reddit-stash-agent/0.1"
+        }
     )
 
 

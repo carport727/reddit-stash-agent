@@ -21,3 +21,4 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+config/reddit-cookies.json
