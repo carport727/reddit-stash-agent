@@ -1,0 +1,7 @@
+requests
+feedparser
+PyYAML
+SQLAlchemy
+rich
+typer
+apscheduler
