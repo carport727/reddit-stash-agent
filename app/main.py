@@ -4,7 +4,9 @@ import yaml
 
 from app.commands import doctor
 from app.commands import scan
+from app.database.database import init_db
 
+init_db()
 
 CONFIG = os.environ.get(
     "CONFIG_FILE",
