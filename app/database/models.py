@@ -8,13 +8,22 @@ class RedditSource(Base):
 
     __tablename__ = "reddit_sources"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(
+        Integer,
+        primary_key=True
+    )
 
-    performer_id = Column(String)
+    performer_id = Column(
+        String
+    )
 
-    source_type = Column(String)
+    source_type = Column(
+        String
+    )
 
-    source_name = Column(String)
+    source_name = Column(
+        String
+    )
 
     last_scan = Column(
         DateTime,
@@ -26,18 +35,36 @@ class RedditPost(Base):
 
     __tablename__ = "reddit_posts"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(
+        Integer,
+        primary_key=True
+    )
 
     reddit_id = Column(
         String,
-        unique=True
+        unique=True,
+        index=True,
+        nullable=False
     )
 
-    source = Column(String)
+    source = Column(
+        String
+    )
 
-    url = Column(String)
+    url = Column(
+        String
+    )
+
+    title = Column(
+        String
+    )
 
     downloaded = Column(
         Boolean,
         default=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
     )
