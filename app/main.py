@@ -10,6 +10,8 @@ from app.commands import test_gallerydl
 from app.commands import test_db
 from app.commands import sync_reddit_sources
 from app.commands import download
+from app.commands import stash_scan
+from app.commands import stash_stats
 from app.database.database import init_db
 
 init_db()
@@ -63,5 +65,12 @@ if len(sys.argv) > 1:
     if command == "download":
         download.run(config)
         sys.exit(0)
+
+    elif command == "stash_scan":
+
+        stash_scan.run(config)
+
+    elif command == "stash_stats":
+        stash_stats.run(config)
 
 print("reddit-stash-agent is running...")
