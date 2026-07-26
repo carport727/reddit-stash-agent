@@ -6,6 +6,7 @@ from app.commands import doctor
 from app.commands import scan
 from app.commands import test_rss
 from app.commands import rss_scan
+from app.commands import test_gallerydl
 from app.database.database import init_db
 
 init_db()
@@ -42,6 +43,10 @@ if len(sys.argv) > 1:
 
     if command == "rss_scan":
         rss_scan.run(config)
+        sys.exit(0)
+
+    if command == "test_gallerydl":
+        test_gallerydl.run(config)
         sys.exit(0)
 
 print("reddit-stash-agent is running...")
