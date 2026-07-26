@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
 
 from app.database.database import Base
@@ -63,3 +64,16 @@ class RedditPost(Base):
         DateTime,
         default=datetime.utcnow
     )
+
+class DownloadedFile(Base):
+    __tablename__ = "downloaded_files"
+
+    id = Column(Integer, primary_key=True)
+    reddit_post_id = Column(
+        Integer,
+        ForeignKey("reddit_posts.id"),
+        nullable=False,
+    )
+    path = Column(String, unique=True, nullable=False)
+
+    post = relationship("RedditPost")
