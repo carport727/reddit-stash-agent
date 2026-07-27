@@ -27,9 +27,9 @@ def run(config):
 
         for source in sources:
 
-            print(
-                f"Source: {source.source_type}:{source.source_name}"
-            )
+           # print(
+           #     f"Source: {source.source_type}:{source.source_name}"
+           # )
 
 
             posts = fetch_posts(
@@ -69,10 +69,10 @@ def run(config):
 
                 added += 1
 
-                print(
-                    " NEW:",
-                    post["title"]
-                )
+               # print(
+               #     " NEW:",
+               #     post["title"]
+               # )
 
 
         db.commit()

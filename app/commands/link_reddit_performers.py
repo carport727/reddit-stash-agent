@@ -65,6 +65,9 @@ def run(config):
                 "/Stash/Download/Reddit/%"
             )
         )
+        .filter(
+            DownloadedFile.performer_linked == False
+        )
         .all()
     )
 
@@ -151,14 +154,18 @@ def run(config):
                     performer_id
                 )
 
+                file.performer_linked = True
+                db.commit()
+
             updates += 1
 
 
         elif ext in IMAGE_EXTENSIONS:
 
 
-            image = stash.find_image_by_path(
-                filename
+            stash.set_image_performer(
+                file.image_id,
+                performer_id
             )
 
 
@@ -191,6 +198,8 @@ def run(config):
                     performer_id
                 )
 
+                file.performer_linked = True
+                db.commit()
 
             updates += 1
 

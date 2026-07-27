@@ -92,6 +92,22 @@ class StashClient:
 
         return result
 
+    def get_image_file_map(self):
+
+        images = self.get_images()
+
+        result = {}
+
+        for image in images:
+
+            if image["files"]:
+
+                result[
+                    image["files"][0]["path"]
+                ] = image["id"]
+
+        return result
+
     def set_scene_performer(self, scene_id, performer_id):
 
         mutation = """
@@ -134,14 +150,13 @@ class StashClient:
 
         return data["findScenes"]["scenes"]
 
-    def find_image_by_path(self, filename):
+    def get_images(self):
 
         query = """
         query {
           findImages(
-            filter: {
-              per_page: -1
-            }
+            image_filter: {},
+            filter: { per_page: -1 }
           ) {
             images {
               id
@@ -155,15 +170,7 @@ class StashClient:
 
         data = self.query(query)
 
-        for image in data["findImages"]["images"]:
-
-            for file in image["files"]:
-
-                if file["path"].endswith(filename):
-                    return image
-
-        return None
-
+        return data["findImages"]["images"]    
 
     def set_image_performer(self, image_id, performer_id):
 

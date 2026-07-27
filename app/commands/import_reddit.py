@@ -40,7 +40,7 @@ def run(config):
     files = (
         db.query(DownloadedFile)
         .filter(
-            DownloadedFile.scene_id == None
+            DownloadedFile.stash_imported == False
         )
         .all()
     )
@@ -114,6 +114,10 @@ def run(config):
         scene_map = stash.get_scene_file_map()
 
 
+        print("Building image map...")
+
+        image_map = stash.get_image_file_map()
+
         linked = 0
 
 
@@ -134,6 +138,8 @@ def run(config):
                 )
 
                 file.scene_id = scene_id
+                file.stash_imported = True
+
                 linked += 1
 
 
@@ -146,6 +152,34 @@ def run(config):
             linked
         )
 
+
+        image_linked = 0
+
+        for file in image_files:
+
+            image_id = image_map.get(file.path)
+
+            if image_id:
+
+                print(
+                    "Linked image:",
+                    file.path,
+                    "->",
+                    image_id
+                )
+
+                file.image_id = image_id
+                file.stash_imported = True
+
+                image_linked += 1
+
+        db.commit()
+
+        print()
+        print(
+            "Images linked:",
+            image_linked
+        )
 
     db.close()
 

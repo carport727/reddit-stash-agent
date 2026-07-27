@@ -78,8 +78,23 @@ class DownloadedFile(Base):
 
 
     scene_id = Column(
-        String,
+        Integer,
         nullable=True,
     )
 
     post = relationship("RedditPost")
+
+    image_id = Column(
+        Integer,
+        nullable=True,
+    )
+
+    stash_imported = Column(
+        Boolean,
+        default=False,
+    )
+
+    performer_linked = Column(
+        Boolean,
+        default=False,
+    )
