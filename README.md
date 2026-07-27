@@ -16,70 +16,73 @@ All commands use:
 
 docker compose run --rm reddit-stash-agent COMMAND
 
-Basic diagnostics
-Doctor
-Checks configuration and Stash connection:
-docker compose run --rm reddit-stash-agent doctor
+### Basic diagnostics
+- Doctor  
+  Checks configuration and Stash connection:  
+  docker compose run --rm reddit-stash-agent doctor
 
-Database test
-docker compose run --rm reddit-stash-agent test_db
+### Database test
+- test_db  
+  docker compose run --rm reddit-stash-agent test_db
 
-RSS test
-Test Reddit RSS access:
-docker compose run --rm reddit-stash-agent test_rss
+### RSS test
+- test_rss  
+  Test Reddit RSS access:  
+  docker compose run --rm reddit-stash-agent test_rss
 
-Gallery downloader test
-docker compose run --rm reddit-stash-agent test_gallerydl
+### Gallery downloader test
+- test_gallerydl  
+  docker compose run --rm reddit-stash-agent test_gallerydl
 
-Database
-Run migrations
-docker compose run --rm reddit-stash-agent migrate_db
+### Database
+- migrate_db  
+  Run migrations: docker compose run --rm reddit-stash-agent migrate_db
 
-Reddit source management
-Add Reddit source
-docker compose run --rm reddit-stash-agent add_source
+### Reddit source management
+- add_source  
+  Add Reddit source: docker compose run --rm reddit-stash-agent add_source
 
-Sync Reddit sources
-docker compose run --rm reddit-stash-agent sync_reddit_sources
+### Sync Reddit sources
+- sync_reddit_sources  
+  docker compose run --rm reddit-stash-agent sync_reddit_sources
 
-Scanning
-Scan Reddit RSS
-docker compose run --rm reddit-stash-agent rss_scan
+### Scanning
+- rss_scan  
+  Scan Reddit RSS: docker compose run --rm reddit-stash-agent rss_scan
 
-Full Reddit scan
-docker compose run --rm reddit-stash-agent scan
+- scan  
+  Full Reddit scan: docker compose run --rm reddit-stash-agent scan
 
-Downloads
-Download Reddit files
-docker compose run --rm reddit-stash-agent download
+### Downloads
+- download  
+  Download Reddit files: docker compose run --rm reddit-stash-agent download
 
-Stash integration
-Scan Stash folder
-Runs Stash metadata scan:
-docker compose run --rm reddit-stash-agent stash_scan
+### Stash integration
+- stash_scan  
+  Scan Stash folder and runs Stash metadata scan: docker compose run --rm reddit-stash-agent stash_scan
 
-Show Stash statistics
-docker compose run --rm reddit-stash-agent stash_stats
+- stash_stats  
+  Show Stash statistics: docker compose run --rm reddit-stash-agent stash_stats
 
-Import Reddit files into Stash
-Links downloaded files with Stash:
-docker compose run --rm reddit-stash-agent import_reddit
+### Import Reddit files into Stash
+- import_reddit  
+  Links downloaded files with Stash: docker compose run --rm reddit-stash-agent import_reddit
 
-Link Reddit performers
-Assign performers:
-docker compose run --rm reddit-stash-agent link_reddit_performers
+### Link Reddit performers
+- link_reddit_performers  
+  Assign performers: docker compose run --rm reddit-stash-agent link_reddit_performers
 
-Full pipeline (recommended)
-This is the command for Pipeline:
-docker compose run --rm reddit-stash-agent sync
+### Full pipeline (recommended)
+- sync  
+  This is the command for Pipeline: docker compose run --rm reddit-stash-agent sync
 
-Pipeline:
-
+#### Pipeline steps
 1. RSS scan
 2. Download new Reddit files
 3. Import into Stash
 4. Link performers
-Development shell
+
+### Development shell
 
 Open container shell:
 
@@ -92,7 +95,8 @@ python
 or:
 
 python -m py_compile app/main.py
-Useful debugging commands
+
+### Useful debugging commands
 
 View database:
 
