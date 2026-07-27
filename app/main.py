@@ -12,6 +12,9 @@ from app.commands import sync_reddit_sources
 from app.commands import download
 from app.commands import stash_scan
 from app.commands import stash_stats
+from app.commands import migrate_db
+from app.commands import import_reddit
+from app.commands import link_reddit_performers
 from app.database.database import init_db
 
 init_db()
@@ -72,5 +75,20 @@ if len(sys.argv) > 1:
 
     elif command == "stash_stats":
         stash_stats.run(config)
+
+    elif command == "match_scenes":
+        from app.commands import match_scenes
+        match_scenes.run(config)
+
+    elif command == "migrate_db":
+        migrate_db.run(config)
+
+    if command == "import_reddit":
+        import_reddit.run(config)
+        sys.exit(0)
+
+    if command == "link_reddit_performers":
+        link_reddit_performers.run(config)
+        sys.exit(0)
 
 print("reddit-stash-agent is running...")

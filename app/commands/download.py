@@ -56,7 +56,7 @@ def run(config):
             print(output.stderr)
 
 
-            if output.returncode == 0:
+            if output.stdout.strip():
 
                 post.downloaded = True
                 downloaded += 1
@@ -71,6 +71,15 @@ def run(config):
                     if not path:
                         continue
 
+                    existing = db.query(
+                        DownloadedFile
+                    ).filter_by(
+                        path=path
+                    ).first()
+
+                    if existing:
+                        continue
+
                     db.add(
                         DownloadedFile(
                             reddit_post_id=post.id,
@@ -83,7 +92,11 @@ def run(config):
                     post.title
                 )
 
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print("DATABASE ERROR:", e)
 
 
         print()

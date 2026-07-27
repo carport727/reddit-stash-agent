@@ -76,4 +76,10 @@ class DownloadedFile(Base):
     )
     path = Column(String, unique=True, nullable=False)
 
+
+    scene_id = Column(
+        String,
+        nullable=True,
+    )
+
     post = relationship("RedditPost")

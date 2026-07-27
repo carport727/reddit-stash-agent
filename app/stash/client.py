@@ -79,3 +79,57 @@ class StashClient:
         )
 
         return data["metadataScan"]
+
+    def get_scene_file_map(self):
+
+        scenes = self.get_scenes()
+
+        result = {}
+
+        for scene in scenes:
+            for file in scene["files"]:
+                result[file["path"]] = scene["id"]
+
+        return result
+
+    def set_scene_performer(self, scene_id, performer_id):
+
+        mutation = """
+        mutation($input: SceneUpdateInput!) {
+          sceneUpdate(input: $input) {
+            id
+          }
+        }
+        """
+
+        self.query(
+            mutation,
+            {
+                "input": {
+                    "id": scene_id,
+                    "performer_ids": [performer_id]
+                }
+            }
+        )
+
+    def get_scenes(self):
+
+        query = """
+        query {
+          findScenes(
+            scene_filter: {},
+            filter: { per_page: -1 }
+          ) {
+            scenes {
+              id
+              files {
+                path
+              }
+            }
+          }
+        }
+        """
+
+        data = self.query(query)
+
+        return data["findScenes"]["scenes"]
