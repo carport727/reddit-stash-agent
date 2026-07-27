@@ -133,3 +133,56 @@ class StashClient:
         data = self.query(query)
 
         return data["findScenes"]["scenes"]
+
+    def find_image_by_path(self, filename):
+
+        query = """
+        query {
+          findImages(
+            filter: {
+              per_page: -1
+            }
+          ) {
+            images {
+              id
+              files {
+                path
+              }
+            }
+          }
+        }
+        """
+
+        data = self.query(query)
+
+        for image in data["findImages"]["images"]:
+
+            for file in image["files"]:
+
+                if file["path"].endswith(filename):
+                    return image
+
+        return None
+
+
+    def set_image_performer(self, image_id, performer_id):
+
+        mutation = """
+        mutation($input: ImageUpdateInput!) {
+          imageUpdate(input: $input) {
+            id
+          }
+        }
+        """
+
+        self.query(
+            mutation,
+            {
+                "input": {
+                    "id": image_id,
+                    "performer_ids": [
+                        performer_id
+                    ]
+                }
+            }
+        )

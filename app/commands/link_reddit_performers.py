@@ -1,8 +1,25 @@
 import os
 
 from app.database.database import SessionLocal
-from app.database.models import RedditSource, RedditPost, DownloadedFile
+from app.database.models import RedditSource, DownloadedFile
 from app.stash.client import StashClient
+
+
+VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".m4v",
+    ".webm",
+    ".mov"
+}
+
+
+IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp"
+}
 
 
 def run(config):
@@ -30,57 +47,163 @@ def run(config):
     )
 
 
-    print(
-        "Sources with performers:",
-        len(sources)
+    print("Sources:")
+
+    for s in sources:
+        print(
+            " ",
+            s.source_name,
+            "->",
+            s.performer_id
+        )
+
+
+    files = (
+        db.query(DownloadedFile)
+        .filter(
+            DownloadedFile.path.like(
+                "/Stash/Download/Reddit/%"
+            )
+        )
+        .all()
     )
 
 
-    scene_updates = 0
+    print()
+    print("Reddit files:", len(files))
+    print(
+        "Videos:",
+        sum(
+            1 for f in files
+            if os.path.splitext(f.path)[1].lower() in VIDEO_EXTENSIONS
+        )
+    )
+
+    print(
+        "Images:",
+        sum(
+            1 for f in files
+            if os.path.splitext(f.path)[1].lower() in IMAGE_EXTENSIONS
+        )
+    )
 
 
-    for source in sources:
+    updates = 0
+    skipped = 0
+
+
+    performer_map = {
+        s.source_name: s.performer_id
+        for s in sources
+    }
+
+
+    for file in files:
+
+        source = file.post.source if file.post else None
+
+        performer_id = performer_map.get(source)
+
+
+        if not performer_id:
+            skipped += 1
+            continue
+
+
+        filename = os.path.basename(file.path)
+        ext = os.path.splitext(filename)[1].lower()
+
 
         print()
+        print(filename)
         print(
-            "Processing:",
-            source.source_name,
-            "->",
-            source.performer_id
+            "Source:",
+            source,
+            "Performer:",
+            performer_id
         )
 
 
-        files = (
-            db.query(DownloadedFile)
-            .join(
-                DownloadedFile.post
-            )
-            .filter(
-                DownloadedFile.scene_id != None
-            )
-            .filter(
-                RedditPost.source == source.source_name
-            )
-            .all()
-        )
+        if ext in VIDEO_EXTENSIONS:
 
+            if not file.scene_id:
+                print("No scene found")
+                skipped += 1
+                continue
 
-        for file in files:
 
             print(
-                "Updating scene:",
+                "Scene:",
                 file.scene_id
             )
 
-            scene_updates += 1
 
-            stash.set_scene_performer(
-                file.scene_id,
-                source.performer_id
+            if config.get("dry_run"):
+
+                print(
+                    "DRY RUN - would update scene"
+                )
+
+            else:
+
+                stash.set_scene_performer(
+                    file.scene_id,
+                    performer_id
+                )
+
+            updates += 1
+
+
+        elif ext in IMAGE_EXTENSIONS:
+
+
+            image = stash.find_image_by_path(
+                filename
             )
 
 
-            scene_updates += 1
+            if not image:
+
+                print(
+                    "Image not found"
+                )
+
+                skipped += 1
+                continue
+
+
+            print(
+                "Image:",
+                image["id"]
+            )
+
+
+            if config.get("dry_run"):
+
+                print(
+                    "DRY RUN - would update image"
+                )
+
+            else:
+
+                stash.set_image_performer(
+                    image["id"],
+                    performer_id
+                )
+
+
+            updates += 1
+
+
+        else:
+
+            print(
+                "Unknown type:",
+                ext
+            )
+
+            skipped += 1
+
 
 
     db.close()
@@ -88,6 +211,11 @@ def run(config):
 
     print()
     print(
-        "Scenes updated:",
-        scene_updates
+        "Would update / Updated:",
+        updates
+    )
+
+    print(
+        "Skipped:",
+        skipped
     )
