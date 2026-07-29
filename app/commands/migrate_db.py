@@ -34,6 +34,16 @@ def run(config):
         try:
             conn.execute(
                 text(
+                    "ALTER TABLE downloaded_files ADD COLUMN gallery_id INTEGER"
+                )
+            )
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            conn.execute(
+                text(
                     "ALTER TABLE downloaded_files ADD COLUMN stash_imported BOOLEAN DEFAULT 0"
                 )
             )

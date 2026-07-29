@@ -41,7 +41,7 @@ def run(config):
 
     try:
 
-        print("1/4 RSS scan")
+        print("1/5 RSS scan")
         print("----------------")
 
         try:
@@ -54,7 +54,7 @@ def run(config):
 
 
         print()
-        print("2/4 Download")
+        print("2/5 Download")
         print("----------------")
 
         try:
@@ -67,7 +67,7 @@ def run(config):
 
 
         print()
-        print("3/4 Import into Stash")
+        print("3/5 Import into Stash")
         print("----------------")
 
         try:
@@ -80,7 +80,20 @@ def run(config):
 
 
         print()
-        print("4/4 Link performers")
+        print("4/5 create gallerys")
+        print("----------------")
+
+        try:
+            gallery_sync.run(config)
+        except Exception as e:
+            print(
+                "Gallery create warning:",
+                e
+            )
+
+
+        print()
+        print("5/5 Link performers")
         print("----------------")
 
         try:

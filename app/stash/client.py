@@ -108,6 +108,45 @@ class StashClient:
 
         return result
 
+    def get_gallery_map(self):
+
+        galleries = self.get_galleries()
+
+        result = {}
+
+        for gallery in galleries:
+
+            if gallery["url"]:
+                result[gallery["url"]] = gallery
+
+        return result
+
+    def create_gallery(
+        self,
+        title,
+        url
+    ):
+
+        mutation = """
+        mutation($input: GalleryCreateInput!) {
+          galleryCreate(input: $input) {
+            id
+          }
+        }
+        """
+
+        data = self.query(
+            mutation,
+            {
+                "input": {
+                    "title": title,
+                    "url": url
+                }
+            }
+        )
+
+        return data["galleryCreate"]["id"]
+
     def set_scene_performer(self, scene_id, performer_id):
 
         mutation = """
@@ -172,6 +211,31 @@ class StashClient:
 
         return data["findImages"]["images"]    
 
+    def get_galleries(self):
+
+        query = """
+        query {
+          findGalleries(
+            filter: {
+              per_page: -1
+            }
+          ) {
+            galleries {
+              id
+              title
+              url
+              images {
+                id
+              }
+            }
+          }
+        }
+        """
+
+        data = self.query(query)
+
+        return data["findGalleries"]["galleries"]
+
     def set_image_performer(self, image_id, performer_id):
 
         mutation = """
@@ -191,5 +255,57 @@ class StashClient:
                         performer_id
                     ]
                 }
+            }
+        )
+
+    def update_gallery(
+        self,
+        gallery_id,
+        title,
+        url
+    ):
+
+        mutation = """
+        mutation($input: GalleryUpdateInput!) {
+          galleryUpdate(input: $input) {
+            id
+          }
+        }
+        """
+
+        self.query(
+            mutation,
+            {
+                "input": {
+                    "id": gallery_id,
+                    "title": title,
+                    "url": url
+                }
+            }
+        )
+
+    def add_gallery_images(
+        self,
+        gallery_id,
+        image_ids
+    ):
+
+        mutation = """
+        mutation(
+          $gallery_id: ID!,
+          $image_ids: [ID!]!
+        ) {
+          addGalleryImages(
+            gallery_id: $gallery_id,
+            image_ids: $image_ids
+          )
+        }
+        """
+
+        self.query(
+            mutation,
+            {
+                "gallery_id": gallery_id,
+                "image_ids": image_ids
             }
         )

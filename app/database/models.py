@@ -89,6 +89,11 @@ class DownloadedFile(Base):
         nullable=True,
     )
 
+    gallery_id = Column(
+        Integer,
+        nullable=True,
+    )
+
     stash_imported = Column(
         Boolean,
         default=False,

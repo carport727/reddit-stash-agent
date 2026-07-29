@@ -16,6 +16,7 @@ from app.commands import migrate_db
 from app.commands import import_reddit
 from app.commands import link_reddit_performers
 from app.commands import sync
+from app.commands import gallery_sync
 from app.database.database import init_db
 
 init_db()
@@ -95,5 +96,8 @@ if len(sys.argv) > 1:
     if command == "sync":
         sync.run(config)
         sys.exit(0)
+
+    elif command == "gallery_sync":
+        gallery_sync.run(config)
 
 print("reddit-stash-agent is running...")
