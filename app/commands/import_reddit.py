@@ -4,7 +4,6 @@ import time
 from app.database.database import SessionLocal
 from app.database.models import DownloadedFile
 from app.stash.client import StashClient
-from collections import defaultdict
 
 
 VIDEO_EXTENSIONS = {
@@ -13,7 +12,6 @@ VIDEO_EXTENSIONS = {
     ".webm",
     ".mov",
 }
-
 
 IMAGE_EXTENSIONS = {
     ".jpg",
@@ -24,6 +22,43 @@ IMAGE_EXTENSIONS = {
 }
 
 
+def wait_for_paths(
+    map_loader,
+    expected_paths,
+    label,
+    attempts=30,
+    interval=5,
+):
+
+    object_map = {}
+
+    for attempt in range(1, attempts + 1):
+
+        object_map = map_loader()
+
+        found_paths = {
+            path
+            for path in expected_paths
+            if path in object_map
+        }
+
+        print(
+            f"{label} found:",
+            len(found_paths),
+            "/",
+            len(expected_paths),
+            f"(attempt {attempt}/{attempts})",
+        )
+
+        if found_paths == expected_paths:
+            break
+
+        if attempt < attempts:
+            time.sleep(interval)
+
+    return object_map
+
+
 def run(config):
 
     print()
@@ -32,99 +67,101 @@ def run(config):
 
     stash = StashClient(
         config["stash"]["url"],
-        config["stash"]["api_key"]
+        config["stash"]["api_key"],
     )
 
     db = SessionLocal()
 
+    try:
 
-    files = (
-        db.query(DownloadedFile)
-        .filter(
-            DownloadedFile.stash_imported == False
-        )
-        .all()
-    )
-
-
-    print("Pending files:", len(files))
-
-
-    if not files:
-        print("Nothing to sync")
-        db.close()
-        return
-
-
-    video_files = []
-    image_files = []
-
-
-    for file in files:
-
-        ext = os.path.splitext(file.path)[1].lower()
-
-        if ext in VIDEO_EXTENSIONS:
-            video_files.append(file)
-
-        elif ext in IMAGE_EXTENSIONS:
-            image_files.append(file)
-
-
-    print("Videos:", len(video_files))
-    print("Images:", len(image_files))
-
-
-    #
-    # Images
-    #
-    # They only need Stash scan.
-    #
-
-    if image_files:
-
-        print()
-        print("Scanning images...")
-
-        stash.scan_path(
-            config["downloads"]["root"]
+        files = (
+            db.query(DownloadedFile)
+            .filter(
+                DownloadedFile.stash_imported == False
+            )
+            .all()
         )
 
+        print("Pending files:", len(files))
 
+        if not files:
+            print("Nothing to sync")
+            return
 
-    #
-    # Videos
-    #
+        video_files = []
+        image_files = []
+        unknown_files = []
 
-    if video_files:
+        for file in files:
 
-        print()
-        print("Scanning videos...")
+            ext = os.path.splitext(
+                file.path
+            )[1].lower()
 
-        stash.scan_path(
-            config["downloads"]["root"]
+            if ext in VIDEO_EXTENSIONS:
+                video_files.append(file)
+
+            elif ext in IMAGE_EXTENSIONS:
+                image_files.append(file)
+
+            else:
+                unknown_files.append(file)
+
+        print("Videos:", len(video_files))
+        print("Images:", len(image_files))
+        print("Unknown:", len(unknown_files))
+
+        scan_required = bool(
+            video_files or image_files
         )
 
+        if scan_required:
 
-        print("Waiting for Stash scan...")
-        time.sleep(15)
+            print()
+            print("Starting Stash metadata scan...")
 
+            stash.scan_path(
+                config["downloads"]["root"]
+            )
 
-        print("Building scene map...")
+        image_map = {}
 
-        scene_map = stash.get_scene_file_map()
+        if image_files:
 
+            print()
+            print("Waiting for Stash image scan...")
 
-        print("Building image map...")
+            expected_image_paths = {
+                file.path
+                for file in image_files
+            }
 
-        image_map = stash.get_image_file_map()
+            image_map = wait_for_paths(
+                stash.get_image_file_map,
+                expected_image_paths,
+                "Images",
+            )
 
+        scene_map = {}
 
-        print("Building gallery map...")
-        gallery_map = stash.get_gallery_map()
+        if video_files:
 
-        linked = 0
+            print()
+            print("Waiting for Stash video scan...")
 
+            expected_video_paths = {
+                file.path
+                for file in video_files
+            }
+
+            scene_map = wait_for_paths(
+                stash.get_scene_file_map,
+                expected_video_paths,
+                "Scenes",
+            )
+
+        video_linked = 0
+        video_missing = 0
 
         for file in video_files:
 
@@ -132,131 +169,87 @@ def run(config):
                 file.path
             )
 
-
-            if scene_id:
+            if not scene_id:
 
                 print(
-                    "Linked:",
+                    "Scene not found:",
                     file.path,
-                    "->",
-                    scene_id
                 )
 
-                file.scene_id = scene_id
-                file.stash_imported = True
+                video_missing += 1
+                continue
 
-                linked += 1
+            print(
+                "Linked scene:",
+                file.path,
+                "->",
+                scene_id,
+            )
 
+            file.scene_id = int(scene_id)
+            file.stash_imported = True
+
+            video_linked += 1
+
+        image_linked = 0
+        image_missing = 0
+
+        for file in image_files:
+
+            image_id = image_map.get(
+                file.path
+            )
+
+            if not image_id:
+
+                print(
+                    "Image not found:",
+                    file.path,
+                )
+
+                image_missing += 1
+                continue
+
+            print(
+                "Linked image:",
+                file.path,
+                "->",
+                image_id,
+            )
+
+            file.image_id = int(image_id)
+            file.stash_imported = True
+
+            image_linked += 1
 
         db.commit()
-
 
         print()
         print(
             "Video scenes linked:",
-            linked
+            video_linked,
         )
-
-
-        image_linked = 0
-
-        for file in image_files:
-
-            image_id = image_map.get(file.path)
-
-            if image_id:
-
-                print(
-                    "Linked image:",
-                    file.path,
-                    "->",
-                    image_id
-                )
-
-                file.image_id = image_id
-                file.stash_imported = True
-
-                image_linked += 1
-
-        db.commit()
-
-        print()
+        print(
+            "Video scenes missing:",
+            video_missing,
+        )
         print(
             "Images linked:",
-            image_linked
+            image_linked,
         )
-
-        print()
-        print("Updating galleries...")
-
-        post_images = defaultdict(list)
-
-        for file in image_files:
-
-            if file.image_id:
-
-                post_images[file.reddit_post_id].append(file)
-
-        for reddit_post_id, images in post_images.items():
-
-            post = images[0].post
-
-            if not post:
-                continue
-
-            gallery_title = post.title
-
-            gallery_url = (
-                f"https://reddit.com{post.permalink}"
-            )
-
-        gallery_id = gallery_map.get(
-            gallery_url
-        )
-
-        if gallery_id:
-
-            print(
-                "Updating gallery:",
-                gallery_title
-            )
-
-            stash.update_gallery(
-                gallery_id,
-                gallery_title,
-                gallery_url
-            )
-
-        else:
-
-            print(
-                "Creating gallery:",
-                gallery_title
-            )
-
-            gallery_id = stash.create_gallery(
-                gallery_title,
-                gallery_url
-            )
-
-        image_ids = [
-            str(file.image_id)
-            for file in images
-        ]
-
         print(
-            "Adding",
-            len(image_ids),
-            "images"
+            "Images missing:",
+            image_missing,
         )
 
-        stash.add_gallery_images(
-            gallery_id,
-            image_ids
-        )
+    except Exception:
 
-    db.close()
+        db.rollback()
+        raise
 
+    finally:
+
+        db.close()
 
     print()
     print("Sync finished")

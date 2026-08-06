@@ -22,3 +22,49 @@ Thumbs.db
 .vscode/
 .idea/
 config/reddit-cookies.json
+
+# Runtime configuration and credentials
+config.yaml
+config/*.yaml
+.env
+.env.*
+reddit-cookies.json
+*-cookies.json
+
+# Runtime databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Logs and temporary files
+*.log
+*.lock
+
+# Runtime configuration and credentials
+config.yaml
+config/*.yaml
+.env
+.env.*
+reddit-cookies.json
+*-cookies.json
+
+# Runtime databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Logs and temporary files
+*.log
+*.lock

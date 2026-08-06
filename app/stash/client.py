@@ -95,18 +95,24 @@ class StashClient:
     def get_image_file_map(self):
 
         images = self.get_images()
-
         result = {}
 
         for image in images:
 
-            if image["files"]:
+            for visual_file in image.get(
+                "visual_files",
+                []
+            ):
 
-                result[
-                    image["files"][0]["path"]
-                ] = image["id"]
+                path = visual_file.get("path")
+
+                if not path:
+                    continue
+
+                result[path] = image["id"]
 
         return result
+
 
     def get_gallery_map(self):
 
@@ -195,12 +201,37 @@ class StashClient:
         query {
           findImages(
             image_filter: {},
-            filter: { per_page: -1 }
+            filter: {
+              per_page: -1
+            }
           ) {
             images {
               id
-              files {
-                path
+              title
+
+              performers {
+                id
+                name
+              }
+
+              galleries {
+                id
+                title
+                url
+              }
+
+              visual_files {
+                __typename
+
+                ... on ImageFile {
+                  id
+                  path
+                }
+
+                ... on VideoFile {
+                  id
+                  path
+                }
               }
             }
           }
@@ -209,7 +240,28 @@ class StashClient:
 
         data = self.query(query)
 
-        return data["findImages"]["images"]    
+        return data["findImages"]["images"]
+
+    def get_gallery_image_map(self):
+
+        images = self.get_images()
+
+        result = {}
+
+        for image in images:
+
+            for gallery in image.get("galleries", []):
+
+                gallery_id = str(gallery["id"])
+
+                if gallery_id not in result:
+                    result[gallery_id] = set()
+
+                result[gallery_id].add(
+                    str(image["id"])
+                )
+
+        return result
 
     def get_galleries(self):
 
@@ -224,9 +276,6 @@ class StashClient:
               id
               title
               url
-              images {
-                id
-              }
             }
           }
         }
@@ -316,22 +365,24 @@ class StashClient:
         image_ids
     ):
 
+        if not image_ids:
+            return None
+
         mutation = """
-        mutation(
-          $gallery_id: ID!,
-          $image_ids: [ID!]!
-        ) {
-          addGalleryImages(
-            gallery_id: $gallery_id,
-            image_ids: $image_ids
-          )
+        mutation($input: GalleryAddInput!) {
+          addGalleryImages(input: $input)
         }
         """
 
-        self.query(
+        return self.query(
             mutation,
             {
-                "gallery_id": gallery_id,
-                "image_ids": image_ids
+                "input": {
+                    "gallery_id": str(gallery_id),
+                    "image_ids": [
+                        str(image_id)
+                        for image_id in image_ids
+                    ]
+                }
             }
         )
