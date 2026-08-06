@@ -258,6 +258,32 @@ class StashClient:
             }
         )
 
+    def set_gallery_performer(
+        self,
+        gallery_id,
+        performer_id
+    ):
+
+        mutation = """
+        mutation($input: GalleryUpdateInput!) {
+          galleryUpdate(input: $input) {
+            id
+          }
+        }
+        """
+
+        self.query(
+            mutation,
+            {
+                "input": {
+                    "id": gallery_id,
+                    "performer_ids": [
+                        performer_id
+                    ]
+                }
+            }
+        )
+
     def update_gallery(
         self,
         gallery_id,

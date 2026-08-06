@@ -3,6 +3,7 @@ import os
 from app.database.database import SessionLocal
 from app.database.models import RedditSource, DownloadedFile
 from app.stash.client import StashClient
+from collections import defaultdict
 
 
 VIDEO_EXTENSIONS = {
@@ -100,6 +101,20 @@ def run(config):
         for s in sources
     }
 
+    gallery_map = stash.get_gallery_map()
+
+    post_images = defaultdict(list)
+
+    for file in files:
+
+        ext = os.path.splitext(file.path)[1].lower()
+
+        if (
+            ext in IMAGE_EXTENSIONS
+            and file.image_id
+        ):
+            post_images[file.reddit_post_id].append(file)
+
 
     for file in files:
 
@@ -162,28 +177,15 @@ def run(config):
 
         elif ext in IMAGE_EXTENSIONS:
 
-
-            stash.set_image_performer(
-                file.image_id,
-                performer_id
-            )
-
-
-            if not image:
-
-                print(
-                    "Image not found"
-                )
-
+            if not file.image_id:
+                print("No image found")
                 skipped += 1
                 continue
 
-
             print(
                 "Image:",
-                image["id"]
+                file.image_id
             )
-
 
             if config.get("dry_run"):
 
@@ -194,11 +196,12 @@ def run(config):
             else:
 
                 stash.set_image_performer(
-                    image["id"],
+                    file.image_id,
                     performer_id
                 )
 
                 file.performer_linked = True
+
                 db.commit()
 
             updates += 1
@@ -213,6 +216,47 @@ def run(config):
 
             skipped += 1
 
+
+    print()
+    print("Updating galleries...")
+
+    for reddit_post_id, images in post_images.items():
+
+        post = images[0].post
+
+        if not post:
+            continue
+
+        gallery_url = f"https://reddit.com{post.permalink}"
+
+        gallery_id = gallery_map.get(gallery_url)
+
+        if not gallery_id:
+
+            print(
+                "Gallery not found:",
+                gallery_url
+            )
+
+            continue
+
+        performer_id = performer_map.get(post.source)
+
+        if performer_id:
+
+            print(
+                "Gallery:",
+                gallery_id,
+                "Performer:",
+                performer_id
+            )
+
+            if not config.get("dry_run"):
+
+                stash.set_gallery_performer(
+                    gallery_id,
+                    performer_id
+                )
 
 
     db.close()
