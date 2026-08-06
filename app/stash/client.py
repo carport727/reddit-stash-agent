@@ -153,7 +153,18 @@ class StashClient:
 
         return data["galleryCreate"]["id"]
 
-    def set_scene_performer(self, scene_id, performer_id):
+
+    def set_scene_performers(
+        self,
+        scene_id,
+        performer_ids,
+    ):
+
+        performer_ids = sorted({
+            str(performer_id)
+            for performer_id in performer_ids
+            if performer_id is not None
+        })
 
         mutation = """
         mutation($input: SceneUpdateInput!) {
@@ -163,15 +174,65 @@ class StashClient:
         }
         """
 
-        self.query(
+        return self.query(
             mutation,
             {
                 "input": {
-                    "id": scene_id,
-                    "performer_ids": [performer_id]
+                    "id": str(scene_id),
+                    "performer_ids":
+                        performer_ids,
                 }
-            }
+            },
         )
+
+
+    def set_scene_performer(
+        self,
+        scene_id,
+        performer_id,
+    ):
+
+        if not hasattr(
+            self,
+            "_scene_performer_cache",
+        ):
+            self._scene_performer_cache = {
+                str(scene["id"]): {
+                    str(performer["id"])
+                    for performer in scene.get(
+                        "performers",
+                        [],
+                    )
+                }
+                for scene in self.get_scenes()
+            }
+
+        scene_key = str(scene_id)
+
+        existing = (
+            self._scene_performer_cache
+            .setdefault(scene_key, set())
+        )
+
+        performer_key = str(performer_id)
+
+        if performer_key in existing:
+            return None
+
+        merged = existing | {
+            performer_key
+        }
+
+        result = self.set_scene_performers(
+            scene_key,
+            merged,
+        )
+
+        self._scene_performer_cache[
+            scene_key
+        ] = merged
+
+        return result
 
     def get_scenes(self):
 
@@ -183,6 +244,12 @@ class StashClient:
           ) {
             scenes {
               id
+
+              performers {
+                id
+                name
+              }
+
               files {
                 path
               }
@@ -276,6 +343,11 @@ class StashClient:
               id
               title
               url
+
+              performers {
+                id
+                name
+              }
             }
           }
         }
@@ -285,7 +357,18 @@ class StashClient:
 
         return data["findGalleries"]["galleries"]
 
-    def set_image_performer(self, image_id, performer_id):
+
+    def set_image_performers(
+        self,
+        image_id,
+        performer_ids,
+    ):
+
+        performer_ids = sorted({
+            str(performer_id)
+            for performer_id in performer_ids
+            if performer_id is not None
+        })
 
         mutation = """
         mutation($input: ImageUpdateInput!) {
@@ -295,23 +378,78 @@ class StashClient:
         }
         """
 
-        self.query(
+        return self.query(
             mutation,
             {
                 "input": {
-                    "id": image_id,
-                    "performer_ids": [
-                        performer_id
-                    ]
+                    "id": str(image_id),
+                    "performer_ids":
+                        performer_ids,
                 }
-            }
+            },
         )
 
-    def set_gallery_performer(
+
+    def set_image_performer(
+        self,
+        image_id,
+        performer_id,
+    ):
+
+        if not hasattr(
+            self,
+            "_image_performer_cache",
+        ):
+            self._image_performer_cache = {
+                str(image["id"]): {
+                    str(performer["id"])
+                    for performer in image.get(
+                        "performers",
+                        [],
+                    )
+                }
+                for image in self.get_images()
+            }
+
+        image_key = str(image_id)
+
+        existing = (
+            self._image_performer_cache
+            .setdefault(image_key, set())
+        )
+
+        performer_key = str(performer_id)
+
+        if performer_key in existing:
+            return None
+
+        merged = existing | {
+            performer_key
+        }
+
+        result = self.set_image_performers(
+            image_key,
+            merged,
+        )
+
+        self._image_performer_cache[
+            image_key
+        ] = merged
+
+        return result
+
+
+    def set_gallery_performers(
         self,
         gallery_id,
-        performer_id
+        performer_ids,
     ):
+
+        performer_ids = sorted({
+            str(performer_id)
+            for performer_id in performer_ids
+            if performer_id is not None
+        })
 
         mutation = """
         mutation($input: GalleryUpdateInput!) {
@@ -321,17 +459,65 @@ class StashClient:
         }
         """
 
-        self.query(
+        return self.query(
             mutation,
             {
                 "input": {
-                    "id": gallery_id,
-                    "performer_ids": [
-                        performer_id
-                    ]
+                    "id": str(gallery_id),
+                    "performer_ids":
+                        performer_ids,
                 }
-            }
+            },
         )
+
+
+    def set_gallery_performer(
+        self,
+        gallery_id,
+        performer_id,
+    ):
+
+        if not hasattr(
+            self,
+            "_gallery_performer_cache",
+        ):
+            self._gallery_performer_cache = {
+                str(gallery["id"]): {
+                    str(performer["id"])
+                    for performer in gallery.get(
+                        "performers",
+                        [],
+                    )
+                }
+                for gallery in self.get_galleries()
+            }
+
+        gallery_key = str(gallery_id)
+
+        existing = (
+            self._gallery_performer_cache
+            .setdefault(gallery_key, set())
+        )
+
+        performer_key = str(performer_id)
+
+        if performer_key in existing:
+            return None
+
+        merged = existing | {
+            performer_key
+        }
+
+        result = self.set_gallery_performers(
+            gallery_key,
+            merged,
+        )
+
+        self._gallery_performer_cache[
+            gallery_key
+        ] = merged
+
+        return result
 
     def update_gallery(
         self,

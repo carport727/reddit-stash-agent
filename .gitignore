@@ -68,3 +68,8 @@ venv/
 # Logs and temporary files
 *.log
 *.lock
+
+# Database backups
+*.db.backup
+*.sqlite.backup
+*.sqlite3.backup

@@ -42,8 +42,10 @@ def run(config):
         )
 
         performer_map = {
-            source.source_name: source.performer_id
+            source.source_name.strip().lower():
+                str(source.performer_id)
             for source in sources
+            if source.source_name
         }
 
         post_images = defaultdict(list)
@@ -254,7 +256,15 @@ def run(config):
             else:
                 print("All images already linked")
 
-            performer_id = performer_map.get(post.source)
+            source_key = (
+                post.source.strip().lower()
+                if post.source
+                else None
+            )
+
+            performer_id = performer_map.get(
+                source_key
+            )
 
             if performer_id:
 

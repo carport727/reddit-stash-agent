@@ -8,7 +8,10 @@ from app.database.models import (
 )
 
 
-def extract_downloaded_paths(stdout, download_root):
+def extract_downloaded_paths(
+    stdout,
+    download_root,
+):
 
     download_root = os.path.abspath(
         download_root
@@ -23,8 +26,6 @@ def extract_downloaded_paths(stdout, download_root):
         if not line:
             continue
 
-        # Some gallery-dl configurations prefix
-        # downloaded paths with "# ".
         if line.startswith("# "):
             line = line[2:].strip()
 
@@ -40,6 +41,7 @@ def extract_downloaded_paths(stdout, download_root):
                 )
                 == download_root
             )
+
         except ValueError:
             inside_download_root = False
 
@@ -59,7 +61,6 @@ def run(config):
     db = SessionLocal()
 
     try:
-
         posts = (
             db.query(RedditPost)
             .filter_by(downloaded=False)
@@ -84,7 +85,7 @@ def run(config):
 
             print(
                 "Downloading:",
-                post.url
+                post.url,
             )
 
             output = subprocess.run(
@@ -92,6 +93,11 @@ def run(config):
                     "gallery-dl",
                     "-d",
                     download_root,
+                    "--filename",
+                    (
+                        "{id} "
+                        "{filename}.{extension}"
+                    ),
                     post.url,
                 ],
                 capture_output=True,
@@ -125,7 +131,7 @@ def run(config):
 
                 print(
                     "NO MEDIA FILES FOUND:",
-                    post.title
+                    post.title,
                 )
 
                 empty_posts += 1
@@ -143,15 +149,13 @@ def run(config):
 
                 if existing:
 
-                    # Repair an incorrect association,
-                    # if one ever exists.
                     if (
                         existing.reddit_post_id
                         != post.id
                     ):
                         print(
-                            "Path already belongs to "
-                            "another post:",
+                            "Path already belongs "
+                            "to another post:",
                             path,
                         )
 
@@ -169,9 +173,6 @@ def run(config):
                 created_files += 1
                 post_file_count += 1
 
-            # Mark the post downloaded when at least
-            # one valid file exists, including files
-            # that were already present in the DB.
             post.downloaded = True
             downloaded_posts += 1
 
@@ -189,26 +190,24 @@ def run(config):
         print()
         print(
             "Downloaded posts:",
-            downloaded_posts
+            downloaded_posts,
         )
         print(
             "Created file rows:",
-            created_files
+            created_files,
         )
         print(
             "Failed posts:",
-            failed_posts
+            failed_posts,
         )
         print(
             "Posts without media:",
-            empty_posts
+            empty_posts,
         )
 
     except Exception:
-
         db.rollback()
         raise
 
     finally:
-
         db.close()
