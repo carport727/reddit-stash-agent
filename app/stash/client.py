@@ -572,3 +572,35 @@ class StashClient:
                 }
             }
         )
+
+
+    def generate_scene_media(
+        self,
+        scene_ids,
+    ):
+        scene_ids = sorted({
+            str(scene_id)
+            for scene_id in scene_ids
+            if scene_id is not None
+        })
+
+        if not scene_ids:
+            return None
+
+        mutation = """
+        mutation($input: GenerateMetadataInput!) {
+          metadataGenerate(input: $input)
+        }
+        """
+
+        return self.query(
+            mutation,
+            {
+                "input": {
+                    "covers": True,
+                    "previews": True,
+                    "sceneIDs": scene_ids,
+                    "overwrite": False,
+                }
+            },
+        )

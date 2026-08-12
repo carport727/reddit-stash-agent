@@ -1,0 +1,51 @@
+name: Reddit Stash Agent
+description: Control and monitor the Reddit Stash Agent from Stash.
+version: 0.6.0
+url: https://github.com/carport727/reddit-stash-agent
+
+settings:
+  agent_url:
+    displayName: Agent URL
+    type: STRING
+
+  enabled:
+    displayName: Automatic sync enabled
+    type: BOOLEAN
+
+  interval_hours:
+    displayName: Scan interval in hours
+    type: NUMBER
+
+ui:
+  javascript:
+    - reddit-stash-agent.js
+  css:
+    - reddit-stash-agent.css
+
+exec:
+  - python3
+  - "{pluginDir}/reddit-stash-agent.py"
+
+interface: raw
+errLog: error
+
+tasks:
+  - name: Test Agent Connection
+    description: Test the connection to the Reddit Stash Agent.
+    execArgs:
+      - health
+
+  - name: Get Agent Status
+    description: Get the current Reddit Stash Agent status.
+    execArgs:
+      - status
+
+  - name: Apply Scheduler Settings
+    description: Apply the configured automatic sync settings.
+    execArgs:
+      - config
+
+  - name: Start Reddit Sync
+    description: Start a Reddit synchronization.
+    execArgs:
+      - sync

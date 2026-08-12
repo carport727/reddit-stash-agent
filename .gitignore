@@ -73,3 +73,25 @@ venv/
 *.db.backup
 *.sqlite.backup
 *.sqlite3.backup
+
+# Local/private runtime configuration
+config/config.yaml
+.env
+
+# Runtime state
+data/
+logs/
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Python
+__pycache__/
+*.pyc
+
+# Keep public examples
+!config/config.example.yaml
+!.env.example

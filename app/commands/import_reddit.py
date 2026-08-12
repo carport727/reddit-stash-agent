@@ -13,6 +13,7 @@ VIDEO_EXTENSIONS = {
     ".mov",
 }
 
+
 IMAGE_EXTENSIONS = {
     ".jpg",
     ".jpeg",
@@ -29,11 +30,12 @@ def wait_for_paths(
     attempts=30,
     interval=5,
 ):
-
     object_map = {}
 
-    for attempt in range(1, attempts + 1):
-
+    for attempt in range(
+        1,
+        attempts + 1,
+    ):
         object_map = map_loader()
 
         found_paths = {
@@ -60,9 +62,11 @@ def wait_for_paths(
 
 
 def run(config):
-
     print()
-    print("Syncing Reddit downloads with Stash...")
+    print(
+        "Syncing Reddit downloads "
+        "with Stash..."
+    )
     print()
 
     stash = StashClient(
@@ -72,20 +76,28 @@ def run(config):
 
     db = SessionLocal()
 
-    try:
+    imported_scene_ids = []
 
+    try:
         files = (
             db.query(DownloadedFile)
             .filter(
-                DownloadedFile.stash_imported == False
+                DownloadedFile
+                .stash_imported
+                == False
             )
             .all()
         )
 
-        print("Pending files:", len(files))
+        print(
+            "Pending files:",
+            len(files),
+        )
 
         if not files:
-            print("Nothing to sync")
+            print(
+                "Nothing to sync"
+            )
             return
 
         video_files = []
@@ -93,43 +105,68 @@ def run(config):
         unknown_files = []
 
         for file in files:
-
             ext = os.path.splitext(
                 file.path
             )[1].lower()
 
             if ext in VIDEO_EXTENSIONS:
-                video_files.append(file)
+                video_files.append(
+                    file
+                )
 
             elif ext in IMAGE_EXTENSIONS:
-                image_files.append(file)
+                image_files.append(
+                    file
+                )
 
             else:
-                unknown_files.append(file)
+                unknown_files.append(
+                    file
+                )
 
-        print("Videos:", len(video_files))
-        print("Images:", len(image_files))
-        print("Unknown:", len(unknown_files))
+        print(
+            "Videos:",
+            len(video_files),
+        )
+
+        print(
+            "Images:",
+            len(image_files),
+        )
+
+        print(
+            "Unknown:",
+            len(unknown_files),
+        )
 
         scan_required = bool(
-            video_files or image_files
+            video_files
+            or image_files
         )
 
         if scan_required:
-
             print()
-            print("Starting Stash metadata scan...")
+            print(
+                "Starting Stash "
+                "metadata scan..."
+            )
 
             stash.scan_path(
-                config["downloads"]["root"]
+                config[
+                    "downloads"
+                ][
+                    "root"
+                ]
             )
 
         image_map = {}
 
         if image_files:
-
             print()
-            print("Waiting for Stash image scan...")
+            print(
+                "Waiting for Stash "
+                "image scan..."
+            )
 
             expected_image_paths = {
                 file.path
@@ -145,9 +182,11 @@ def run(config):
         scene_map = {}
 
         if video_files:
-
             print()
-            print("Waiting for Stash video scan...")
+            print(
+                "Waiting for Stash "
+                "video scan..."
+            )
 
             expected_video_paths = {
                 file.path
@@ -164,13 +203,11 @@ def run(config):
         video_missing = 0
 
         for file in video_files:
-
             scene_id = scene_map.get(
                 file.path
             )
 
             if not scene_id:
-
                 print(
                     "Scene not found:",
                     file.path,
@@ -186,8 +223,15 @@ def run(config):
                 scene_id,
             )
 
-            file.scene_id = int(scene_id)
+            file.scene_id = int(
+                scene_id
+            )
+
             file.stash_imported = True
+
+            imported_scene_ids.append(
+                str(scene_id)
+            )
 
             video_linked += 1
 
@@ -195,13 +239,11 @@ def run(config):
         image_missing = 0
 
         for file in image_files:
-
             image_id = image_map.get(
                 file.path
             )
 
             if not image_id:
-
                 print(
                     "Image not found:",
                     file.path,
@@ -217,7 +259,10 @@ def run(config):
                 image_id,
             )
 
-            file.image_id = int(image_id)
+            file.image_id = int(
+                image_id
+            )
+
             file.stash_imported = True
 
             image_linked += 1
@@ -229,27 +274,66 @@ def run(config):
             "Video scenes linked:",
             video_linked,
         )
+
         print(
             "Video scenes missing:",
             video_missing,
         )
+
         print(
             "Images linked:",
             image_linked,
         )
+
         print(
             "Images missing:",
             image_missing,
         )
 
-    except Exception:
+        if imported_scene_ids:
+            unique_scene_ids = sorted(
+                set(
+                    imported_scene_ids
+                )
+            )
 
+            print()
+            print(
+                "Generating scene "
+                "covers and previews..."
+            )
+
+            print(
+                "Scenes:",
+                len(
+                    unique_scene_ids
+                ),
+            )
+
+            stash.generate_scene_media(
+                unique_scene_ids
+            )
+
+            print(
+                "Generate task "
+                "started"
+            )
+
+        else:
+            print()
+            print(
+                "No new video scenes "
+                "to generate"
+            )
+
+    except Exception:
         db.rollback()
         raise
 
     finally:
-
         db.close()
 
     print()
-    print("Sync finished")
+    print(
+        "Sync finished"
+    )

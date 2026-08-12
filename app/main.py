@@ -20,23 +20,21 @@ from app.commands import sync
 from app.commands import gallery_sync
 from app.database.database import init_db
 
+
 init_db()
 
 CONFIG = os.environ.get(
     "CONFIG_FILE",
-    "/config/config.yaml"
+    "/config/config.yaml",
 )
-
 
 with open(CONFIG) as f:
     config = yaml.safe_load(f)
-
 
 print("✓ Configuration loaded")
 
 
 if len(sys.argv) > 1:
-
     command = sys.argv[1]
 
     if command == "doctor":
@@ -71,19 +69,23 @@ if len(sys.argv) > 1:
         download.run(config)
         sys.exit(0)
 
-    elif command == "stash_scan":
-
+    if command == "stash_scan":
         stash_scan.run(config)
+        sys.exit(0)
 
-    elif command == "stash_stats":
+    if command == "stash_stats":
         stash_stats.run(config)
+        sys.exit(0)
 
-    elif command == "match_scenes":
+    if command == "match_scenes":
         from app.commands import match_scenes
-        match_scenes.run(config)
 
-    elif command == "migrate_db":
+        match_scenes.run(config)
+        sys.exit(0)
+
+    if command == "migrate_db":
         migrate_db.run(config)
+        sys.exit(0)
 
     if command == "import_reddit":
         import_reddit.run(config)
@@ -97,12 +99,64 @@ if len(sys.argv) > 1:
         link_reddit_performers.run(config)
         sys.exit(0)
 
-    if command == "sync":
-        sync.run(config)
-        sys.exit(0)
-
-    elif command == "gallery_sync":
+    if command == "gallery_sync":
         gallery_sync.run(config)
         sys.exit(0)
 
-print("reddit-stash-agent is running...")
+    if command == "sync":
+        from app.runtime.sync_state import (
+            SyncAlreadyRunning,
+            mark_finished,
+            mark_running,
+            sync_lock,
+        )
+
+        trigger = os.environ.get(
+            "SYNC_TRIGGER",
+            "cli",
+        )
+
+        try:
+            with sync_lock():
+                mark_running(
+                    trigger
+                )
+
+                try:
+                    sync.run(config)
+
+                except Exception as exc:
+                    mark_finished(
+                        "failed",
+                        str(exc),
+                    )
+                    raise
+
+                else:
+                    mark_finished(
+                        "success"
+                    )
+
+        except SyncAlreadyRunning:
+            print(
+                "Sync already running"
+            )
+            sys.exit(2)
+
+        sys.exit(0)
+
+    if command == "serve":
+        import uvicorn
+
+        uvicorn.run(
+            "app.api.server:app",
+            host="0.0.0.0",
+            port=8787,
+        )
+
+        sys.exit(0)
+
+
+print(
+    "reddit-stash-agent is running..."
+)

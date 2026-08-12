@@ -1,23 +1,23 @@
 services:
 
   reddit-stash-agent:
-
     build: .
 
     container_name: reddit-stash-agent
 
     restart: unless-stopped
 
+    command:
+      - serve
+
+    ports:
+      - "8787:8787"
+
     volumes:
-
       - ./config:/config
-
       - ./data:/data
-
       - ./logs:/logs
-
       - /Stash:/Stash
 
     environment:
-
       CONFIG_FILE: /config/config.yaml

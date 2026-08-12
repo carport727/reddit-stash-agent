@@ -5,3 +5,5 @@ SQLAlchemy
 rich
 typer
 apscheduler
+fastapi
+uvicorn

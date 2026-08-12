@@ -1,0 +1,13 @@
+.reddit-stash-agent-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.reddit-stash-agent-page h2 {
+  margin-bottom: 1rem;
+}
+
+.reddit-stash-agent-nav {
+  white-space: nowrap;
+}
