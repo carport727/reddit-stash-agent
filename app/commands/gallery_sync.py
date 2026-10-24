@@ -5,328 +5,97 @@ from app.database.models import DownloadedFile, RedditSource
 from app.stash.client import StashClient
 
 
+def performer_map(db):
+    """Lowercase source name -> Stash performer ID."""
+    return {
+        source.source_name.strip().lower(): str(source.performer_id)
+        for source in db.query(RedditSource).filter(RedditSource.performer_id.isnot(None)).all()
+        if source.source_name
+    }
+
+
 def run(config):
-
-    print()
-    print("Syncing Reddit galleries...")
-    print()
-
-    dry_run = config.get("dry_run", False)
-
+    """One Stash gallery per Reddit post with images, titled after the post and linked to the performer."""
+    dry_run = bool(config.get("dry_run"))
     if dry_run:
         print("DRY RUN enabled")
-        print()
 
-    stash = StashClient(
-        config["stash"]["url"],
-        config["stash"]["api_key"]
-    )
-
+    stash = StashClient.from_config(config)
     db = SessionLocal()
 
+    created = updated = images_added = performers_linked = skipped = 0
+
     try:
-        files = (
-            db.query(DownloadedFile)
-            .filter(
-                DownloadedFile.image_id.isnot(None)
-            )
-            .all()
-        )
-
-        sources = (
-            db.query(RedditSource)
-            .filter(
-                RedditSource.performer_id.isnot(None)
-            )
-            .all()
-        )
-
-        performer_map = {
-            source.source_name.strip().lower():
-                str(source.performer_id)
-            for source in sources
-            if source.source_name
-        }
+        performers = performer_map(db)
 
         post_images = defaultdict(list)
+        for file in db.query(DownloadedFile).filter(DownloadedFile.image_id.isnot(None)).all():
+            if file.post:
+                post_images[file.reddit_post_id].append(file)
 
-        for file in files:
+        gallery_map = stash.get_reddit_gallery_map()
+        gallery_images = defaultdict(set)
+        valid_image_ids = set()
+        for image in stash.get_images(config["downloads"]["root"]):
+            valid_image_ids.add(str(image["id"]))
+            for gallery in image.get("galleries") or []:
+                gallery_images[str(gallery["id"])].add(str(image["id"]))
 
-            if not file.post:
-                continue
+        print(f"Posts with images: {len(post_images)}, existing Reddit galleries: {len(gallery_map)}")
 
-            post_images[file.reddit_post_id].append(file)
-
-        print("Imported image files:", len(files))
-        print("Reddit posts with images:", len(post_images))
-        print("Performer mappings:", len(performer_map))
-        print()
-
-        print("Loading existing Stash galleries...")
-
-        gallery_map = stash.get_gallery_map()
-
-        stash_images = stash.get_images()
-
-        valid_image_ids = {
-            str(image["id"])
-            for image in stash_images
-        }
-
-        gallery_image_map = {}
-
-        for image in stash_images:
-
-            image_id = str(image["id"])
-
-            for gallery in image.get("galleries", []):
-
-                gallery_id = str(gallery["id"])
-
-                gallery_image_map.setdefault(
-                    gallery_id,
-                    set()
-                ).add(image_id)
-
-        print("Existing galleries:", len(gallery_map))
-        print("Existing Stash images:", len(valid_image_ids))
-        print()
-
-        created = 0
-        updated = 0
-        images_added = 0
-        performers_linked = 0
-        stale_images = 0
-        skipped = 0
-
-        for reddit_post_id, image_files in post_images.items():
-
-            post = image_files[0].post
-
-            if not post:
+        for files in post_images.values():
+            post = files[0].post
+            if not post.url:
                 skipped += 1
                 continue
 
-            gallery_url = post.url
-            gallery_title = post.title or post.reddit_id
-
-            if not gallery_url:
-                print(
-                    "Skipping post without URL:",
-                    post.reddit_id
-                )
-                skipped += 1
-                continue
-
-            database_image_ids = {
-                str(file.image_id)
-                for file in image_files
-                if file.image_id
-            }
-
-            stale_image_ids = sorted(
-                database_image_ids - valid_image_ids
-            )
-
-            image_ids = sorted(
-                database_image_ids & valid_image_ids
-            )
-
-            if stale_image_ids:
-
-                print(
-                    "Skipping stale image IDs:",
-                    ", ".join(stale_image_ids)
-                )
-
-                stale_images += len(stale_image_ids)
-
+            title = post.title or post.reddit_id
+            image_ids = sorted({str(f.image_id) for f in files} & valid_image_ids)
             if not image_ids:
                 skipped += 1
                 continue
 
-            print()
-            print("Post:", post.reddit_id)
-            print("Title:", gallery_title)
-            print("URL:", gallery_url)
-            print("Images:", len(image_ids))
-
-            gallery = gallery_map.get(gallery_url)
-
+            gallery = gallery_map.get(post.url)
             if gallery:
-
                 gallery_id = str(gallery["id"])
-
-                print("Gallery exists:", gallery_id)
-
-                title_changed = (
-                    gallery.get("title") != gallery_title
-                )
-
-                if title_changed:
-
-                    print("Updating gallery metadata")
-
+                if gallery.get("title") != title:
                     if not dry_run:
-                        stash.update_gallery(
-                            gallery_id,
-                            gallery_title,
-                            gallery_url
-                        )
-
+                        stash.update_gallery_title(gallery_id, title)
                     updated += 1
-
             else:
-
-                print("Creating gallery")
-
-                if dry_run:
-                    gallery_id = None
-
-                else:
-                    gallery_id = stash.create_gallery(
-                        gallery_title,
-                        gallery_url
-                    )
-
-                    gallery = {
-                        "id": gallery_id,
-                        "title": gallery_title,
-                        "url": gallery_url,
-                        "images": [],
-                    }
-
-                    gallery_map[gallery_url] = gallery
-
+                print(f"Creating gallery: {title}")
+                gallery_id = None if dry_run else str(stash.create_gallery(title, post.url))
+                if gallery_id:
+                    gallery_map[post.url] = {"id": gallery_id, "title": title}
                 created += 1
 
-            existing_image_ids = set()
-
-            if gallery_id:
-                existing_image_ids = (
-                    gallery_image_map.get(
-                        str(gallery_id),
-                        set()
-                    )
-                )
-
-            missing_image_ids = [
-                image_id
-                for image_id in image_ids
-                if image_id not in existing_image_ids
-            ]
-
-            if missing_image_ids:
-
-                print(
-                    "Adding images:",
-                    len(missing_image_ids)
-                )
-
+            missing = [i for i in image_ids if i not in gallery_images.get(gallery_id, set())]
+            if missing:
                 if not dry_run:
                     try:
-                        stash.add_gallery_images(
-                            gallery_id,
-                            missing_image_ids
-                        )
-
+                        stash.add_gallery_images(gallery_id, missing)
                     except Exception as error:
-
-                        print(
-                            "Failed to add images:",
-                            missing_image_ids
-                        )
-                        print("Error:", error)
-
-                        skipped += len(
-                            missing_image_ids
-                        )
-
+                        print(f"Failed to add {len(missing)} images to gallery {gallery_id}: {error}")
+                        skipped += 1
                         continue
+                    gallery_images[gallery_id].update(missing)
+                images_added += len(missing)
 
-                images_added += len(missing_image_ids)
+            performer_id = performers.get((post.source or "").strip().lower())
+            if performer_id and gallery_id and not dry_run:
+                if stash.add_performer("gallery", gallery_id, performer_id) == "added":
+                    performers_linked += 1
 
-                if gallery_id:
-
-                    gallery_image_map.setdefault(
-                        str(gallery_id),
-                        set()
-                    ).update(missing_image_ids)
-
-            else:
-                print("All images already linked")
-
-            source_key = (
-                post.source.strip().lower()
-                if post.source
-                else None
-            )
-
-            performer_id = performer_map.get(
-                source_key
-            )
-
-            if performer_id:
-
-                print(
-                    "Setting performer:",
-                    performer_id
-                )
-
-                if not dry_run:
-                    stash.set_gallery_performer(
-                        gallery_id,
-                        performer_id
-                    )
-
-                performers_linked += 1
-
-            else:
-                print(
-                    "No performer mapping for source:",
-                    post.source
-                )
-
-            if not dry_run and gallery_id:
-
-                try:
-                    database_gallery_id = int(gallery_id)
-                except (TypeError, ValueError):
-                    database_gallery_id = None
-
-                for file in image_files:
-                    file.gallery_id = database_gallery_id
-
+            if gallery_id and not dry_run:
+                for file in files:
+                    file.gallery_id = int(gallery_id)
                 db.commit()
-
-        print()
-        print("Gallery sync finished")
-        print()
-        print(
-            "Created:",
-            created
-        )
-        print(
-            "Updated:",
-            updated
-        )
-        print(
-            "Added images:",
-            images_added
-        )
-        print(
-            "Linked performers:",
-            performers_linked
-        )
-        print(
-            "Skipping stale image IDs:",
-            stale_images
-        )
-
-        print(
-            "Skipped:",
-            skipped
-        )
 
     finally:
         db.close()
+
+    print(
+        f"Galleries created: {created}, retitled: {updated}, images added: {images_added}, "
+        f"performers linked: {performers_linked}, skipped: {skipped}"
+    )
+    return {"galleries_created": created, "gallery_images_added": images_added}

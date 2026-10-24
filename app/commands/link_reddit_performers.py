@@ -1,282 +1,74 @@
-import os
-
+from app.commands.gallery_sync import performer_map
+from app.commands.import_reddit import media_kind
 from app.database.database import SessionLocal
-from app.database.models import (
-    RedditSource,
-    DownloadedFile,
-)
-from app.stash.client import StashClient
-
-
-VIDEO_EXTENSIONS = {
-    ".mp4",
-    ".m4v",
-    ".webm",
-    ".mov",
-}
-
-IMAGE_EXTENSIONS = {
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".webp",
-}
+from app.database.models import DownloadedFile
+from app.stash.client import StashClient, StashError
 
 
 def run(config):
-
-    print()
-    print("Linking Reddit performers...")
-    print()
-
-    dry_run = config.get(
-        "dry_run",
-        False,
-    )
-
+    """Add the source's performer to every imported scene and image."""
+    dry_run = bool(config.get("dry_run"))
     if dry_run:
         print("DRY RUN enabled")
-        print()
 
-    stash = StashClient(
-        config["stash"]["url"],
-        config["stash"]["api_key"],
-    )
-
+    stash = StashClient.from_config(config)
     db = SessionLocal()
 
+    linked = no_mapping = stale = errors = 0
+
     try:
-
-        sources = (
-            db.query(RedditSource)
-            .filter(
-                RedditSource.performer_id.isnot(None)
-            )
-            .all()
-        )
-
-        performer_map = {
-            source.source_name.strip().lower():
-                str(source.performer_id)
-            for source in sources
-            if source.source_name
-        }
-
-        print("Sources:")
-
-        for source_name, performer_id in (
-            performer_map.items()
-        ):
-            print(
-                " ",
-                source_name,
-                "->",
-                performer_id,
-            )
-
+        performers = performer_map(db)
         files = (
             db.query(DownloadedFile)
-            .filter(
-                DownloadedFile.path.like(
-                    "/Stash/Download/Reddit/%"
-                )
-            )
-            .filter(
-                DownloadedFile.performer_linked
-                == False
-            )
+            .filter(DownloadedFile.stash_imported.is_(True), DownloadedFile.performer_linked.is_(False))
             .all()
         )
-
-        print()
-        print("Reddit files:", len(files))
-
-        updated = 0
-        no_mapping = 0
-        no_stash_object = 0
-        stale_objects = 0
-        unknown_type = 0
+        print(f"Files to link: {len(files)}")
 
         for file in files:
-
             post = file.post
-
-            if not post:
-
-                print(
-                    "Missing Reddit post for:",
-                    file.path,
-                )
-
-                no_mapping += 1
-                continue
-
-            source = post.source
-
-            source_key = (
-                source.strip().lower()
-                if source
-                else None
-            )
-
-            performer_id = performer_map.get(
-                source_key
-            )
-
+            performer_id = performers.get((post.source or "").strip().lower()) if post else None
             if not performer_id:
-
-                print(
-                    "No performer mapping:",
-                    source,
-                    "-",
-                    file.path,
-                )
-
                 no_mapping += 1
                 continue
 
-            filename = os.path.basename(
-                file.path
-            )
+            kind = media_kind(file.path)
+            object_id = file.scene_id if kind == "video" else file.image_id if kind == "image" else None
+            if not object_id:
+                continue
 
-            ext = os.path.splitext(
-                filename
-            )[1].lower()
-
-            print()
-            print(filename)
-            print(
-                "Source:",
-                source,
-                "Performer:",
-                performer_id,
-            )
+            stash_kind = "scene" if kind == "video" else "image"
+            if dry_run:
+                print(f"DRY RUN - would link performer {performer_id} to {stash_kind} {object_id}")
+                linked += 1
+                continue
 
             try:
-
-                if ext in VIDEO_EXTENSIONS:
-
-                    if not file.scene_id:
-
-                        print("No scene found")
-                        no_stash_object += 1
-                        continue
-
-                    print(
-                        "Scene:",
-                        file.scene_id,
-                    )
-
-                    if dry_run:
-
-                        print(
-                            "DRY RUN - "
-                            "would update scene"
-                        )
-
-                    else:
-
-                        stash.set_scene_performer(
-                            file.scene_id,
-                            performer_id,
-                        )
-
-                elif ext in IMAGE_EXTENSIONS:
-
-                    if not file.image_id:
-
-                        print("No image found")
-                        no_stash_object += 1
-                        continue
-
-                    print(
-                        "Image:",
-                        file.image_id,
-                    )
-
-                    if dry_run:
-
-                        print(
-                            "DRY RUN - "
-                            "would update image"
-                        )
-
-                    else:
-
-                        stash.set_image_performer(
-                            file.image_id,
-                            performer_id,
-                        )
-
-                else:
-
-                    print(
-                        "Unknown type:",
-                        ext,
-                    )
-
-                    unknown_type += 1
-                    continue
-
-            except Exception as error:
-
-                print(
-                    "Stash object is missing "
-                    "or could not be updated"
-                )
-                print("Error:", error)
-
-                if not dry_run:
-
-                    if ext in VIDEO_EXTENSIONS:
-                        file.scene_id = None
-
-                    elif ext in IMAGE_EXTENSIONS:
-                        file.image_id = None
-
-                    file.stash_imported = False
-                    file.performer_linked = False
-
-                    db.commit()
-
-                stale_objects += 1
+                result = stash.add_performer(stash_kind, object_id, performer_id)
+            except StashError as error:
+                # Transient (network, Stash busy): keep the file as is and retry next sync.
+                errors += 1
+                print(f"Could not link {stash_kind} {object_id}: {error}")
                 continue
 
-            if not dry_run:
-
+            if result == "missing":
+                # Deleted in Stash: import again on the next sync.
+                print(f"{stash_kind} {object_id} no longer exists in Stash: {file.path}")
+                file.scene_id = None
+                file.image_id = None
+                file.stash_imported = False
+                stale += 1
+            else:
                 file.performer_linked = True
-                db.commit()
+                linked += 1
 
-            updated += 1
-
-        print()
-        print(
-            "Would update / Updated:",
-            updated,
-        )
-        print(
-            "No performer mapping:",
-            no_mapping,
-        )
-        print(
-            "No Stash object:",
-            no_stash_object,
-        )
-        print(
-            "Stale Stash objects:",
-            stale_objects,
-        )
-        print(
-            "Unknown types:",
-            unknown_type,
-        )
+            db.commit()
 
     except Exception:
-
         db.rollback()
         raise
-
     finally:
-
         db.close()
+
+    print(f"Linked: {linked}, without performer mapping: {no_mapping}, stale: {stale}, errors: {errors}")
+    return {"performers_linked": linked, "link_errors": errors}

@@ -1,97 +1,38 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-
-# Virtual environments
-venv/
-.venv/
-
-# Runtime data
-data/
-logs/
-
-# Local configuration
-config/reddit-cookies.txt
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-config/reddit-cookies.json
-
-# Runtime configuration and credentials
-config.yaml
-config/*.yaml
-.env
-.env.*
-reddit-cookies.json
-*-cookies.json
-
-# Runtime databases
-*.db
-*.sqlite
-*.sqlite3
-
-# Python
-__pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
 
-# Logs and temporary files
-*.log
-*.lock
-
-# Runtime configuration and credentials
-config.yaml
-config/*.yaml
+# Local configuration and credentials
+config/*
+!config/config.example.yaml
 .env
 .env.*
-reddit-cookies.json
+!.env.example
 *-cookies.json
-
-# Runtime databases
-*.db
-*.sqlite
-*.sqlite3
-
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-
-# Logs and temporary files
-*.log
-*.lock
-
-# Database backups
-*.db.backup
-*.sqlite.backup
-*.sqlite3.backup
-
-# Local/private runtime configuration
-config/config.yaml
-.env
+*-cookies.txt
 
 # Runtime state
 data/
 logs/
 *.db
+*.db-*
+*.db.backup
 *.sqlite
 *.sqlite3
-*.db-shm
-*.db-wal
-*.db-journal
+*.log
 
-# Python
-__pycache__/
-*.pyc
+# Build output
+_site/
 
-# Keep public examples
-!config/config.example.yaml
-!.env.example
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local review notes
+REVIEW.md

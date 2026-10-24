@@ -1,91 +1,60 @@
-from datetime import datetime
+import time
 
 from app.database.database import SessionLocal
-from app.database.models import RedditSource, RedditPost
-from app.providers.reddit.rss import fetch_posts
+from app.database.models import RedditPost, RedditSource, utcnow
+from app.providers.reddit.rss import RssError, fetch_posts, load_cookie_header
 
 
 def run(config):
+    print("Checking Reddit RSS feeds...")
+
+    cookie_header = load_cookie_header(config["reddit"]["cookies"])
+    if not cookie_header:
+        print("No Reddit cookies configured; NSFW or private feeds may be empty.")
+
+    delay = float(config["reddit"].get("request_delay_seconds") or 0)
 
     db = SessionLocal()
+    added = skipped = failed = 0
 
     try:
+        sources = db.query(RedditSource).all()
 
-        sources = db.query(
-            RedditSource
-        ).all()
+        for index, source in enumerate(sources):
+            if index and delay:
+                time.sleep(delay)
 
+            try:
+                posts = fetch_posts(source.source_type, source.source_name, cookie_header)
+            except RssError as exc:
+                failed += 1
+                print(f"RSS FAILED {source.source_type}:{source.source_name}: {exc}")
+                continue
 
-        added = 0
-        skipped = 0
-
-
-        print()
-        print("Checking Reddit sources...")
-        print()
-
-
-        for source in sources:
-
-           # print(
-           #     f"Source: {source.source_type}:{source.source_name}"
-           # )
-
-
-            posts = fetch_posts(
-                source.source_type,
-                source.source_name
-            )
-
-            source.last_scan = datetime.utcnow()
+            source.last_scan = utcnow()
+            new_here = 0
 
             for post in posts:
-
-                exists = db.query(
-                    RedditPost
-                ).filter_by(
-                    reddit_id=post["reddit_id"]
-                ).first()
-
-
-                if exists:
-
+                if db.query(RedditPost).filter_by(reddit_id=post["reddit_id"]).first():
                     skipped += 1
                     continue
 
-
-                reddit_post = RedditPost(
-                    reddit_id=post["reddit_id"],
-                    source=source.source_name,
-                    url=post["url"],
-                    title=post.get("title"),
-                    downloaded=False
-                )
-
-
                 db.add(
-                    reddit_post
+                    RedditPost(
+                        reddit_id=post["reddit_id"],
+                        source=source.source_name,
+                        url=post["url"],
+                        title=post.get("title"),
+                        downloaded=False,
+                    )
                 )
-
                 added += 1
+                new_here += 1
 
-               # print(
-               #     " NEW:",
-               #     post["title"]
-               # )
-
-
-        db.commit()
-
+            print(f"{source.source_type}:{source.source_name}: {len(posts)} entries, {new_here} new")
+            db.commit()
     finally:
         db.close()
 
-
-    print()
-    print("Finished")
-    print(
-        f"Added: {added}"
-    )
-    print(
-        f"Skipped: {skipped}"
-    )
+    print(f"New posts: {added}, known: {skipped}, failed feeds: {failed}")
+    return {"posts_new": added, "feeds_failed": failed}

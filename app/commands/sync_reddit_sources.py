@@ -1,149 +1,54 @@
 from app.database.database import SessionLocal
 from app.database.models import RedditSource
+from app.reddit.parser import parse_reddit_urls
 from app.stash.client import StashClient
 
 
-def extract_reddit_urls(urls):
-
-    reddit_urls = []
-
-    for url in urls:
-
-        if "reddit.com" in url:
-    
-            reddit_urls.append(url)
-
-    return reddit_urls
-
-
-
-def parse_reddit_source(url):
-
-    if "/user/" in url:
-
-        name = url.split("/user/")[1].split("/")[0]
-
-        return "user", name
-
-
-    if "/r/" in url:
-
-        name = url.split("/r/")[1].split("/")[0]
-
-        return "subreddit", name
-
-
-    return None, None
-
-
-
 def run(config):
+    """Mirror the Reddit URLs of Stash performers into reddit_sources.
+
+    Sources whose URL was removed from the performer are deleted, so they stop syncing.
+    Already downloaded posts and files are kept.
+    """
+    print("Syncing Reddit sources from Stash performers...")
+
+    stash = StashClient.from_config(config)
+    performers = stash.get_reddit_performers()
+
+    wanted = {}
+    for performer in performers:
+        for source_type, source_name in parse_reddit_urls(performer.get("urls")):
+            wanted[(str(performer["id"]), source_type, source_name)] = performer["name"]
 
     db = SessionLocal()
+    added = removed = 0
 
     try:
-
-        print()
-        print("Syncing Reddit sources from Stash...")
-        print()
-
-
-        stash = StashClient(
-            config["stash"]["url"],
-            config["stash"]["api_key"]
-        )
-
-
-        performers = stash.get_performers()
-
-
-        added = 0
-        skipped = 0
-
-
-        for performer in performers:
-
-
-            reddit_urls = extract_reddit_urls(
-                performer.get("urls", [])
-            )
-
-
-            if not reddit_urls:
+        existing = {}
+        for source in db.query(RedditSource).all():
+            key = (str(source.performer_id), source.source_type, (source.source_name or "").lower())
+            if key in existing or key not in wanted:
+                db.delete(source)
+                removed += 1
+                print(f"REMOVED: {source.source_type}:{source.source_name} (performer {source.performer_id})")
                 continue
 
-            for reddit_url in reddit_urls:
+            if source.source_name != key[2]:
+                source.source_name = key[2]
+            existing[key] = source
 
+        for key, performer_name in wanted.items():
+            if key in existing:
+                continue
 
-
-                source_type, source_name = parse_reddit_source(
-                    reddit_url
-                )
-
-
-                if not source_name:
-                    continue
-
-
-
-                exists = db.query(
-                   RedditSource
-                ).filter_by(
-                   performer_id=performer["id"],
-                   source_name=source_name
-                ).first()
-
-
-
-                if exists:
-
-                    skipped += 1
-                    continue
-
-
-
-                source = RedditSource(
-
-                    performer_id=performer["id"],
-
-                    source_type=source_type,
-
-                    source_name=source_name
-
-                )
-
-
-                db.add(source)
-
-                added += 1
-
-
-                print(
-                    "NEW:",
-                    performer["name"],
-                    "->",
-                    reddit_url
-                )
-
-
+            performer_id, source_type, source_name = key
+            db.add(RedditSource(performer_id=performer_id, source_type=source_type, source_name=source_name))
+            added += 1
+            print(f"NEW: {performer_name} -> {source_type}:{source_name}")
 
         db.commit()
-
-
-
-        print()
-        print("Finished")
-        print(
-            "Added:",
-            added
-        )
-
-        print(
-            "Skipped:",
-            skipped
-        )
-
-
     finally:
-
         db.close()
+
+    print(f"Performers with Reddit URLs: {len(performers)}, sources: {len(wanted)}, added: {added}, removed: {removed}")
+    return {"sources": len(wanted), "sources_added": added, "sources_removed": removed}

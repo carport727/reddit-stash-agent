@@ -1,23 +1,19 @@
 services:
-
   reddit-stash-agent:
-    build: .
-
+    image: ghcr.io/carport727/reddit-stash-agent:latest
+    # To build from source instead: comment out "image" and use
+    # build: .
     container_name: reddit-stash-agent
-
     restart: unless-stopped
-
-    command:
-      - serve
-
+    env_file:
+      - path: .env
+        required: false
     ports:
+      # Stash must reach this port. Restrict to one interface if possible, e.g. "192.168.1.10:8787:8787".
       - "8787:8787"
-
     volumes:
       - ./config:/config
       - ./data:/data
       - ./logs:/logs
+      # Must be the same path Stash sees, because the agent asks Stash to scan it.
       - /Stash:/Stash
-
-    environment:
-      CONFIG_FILE: /config/config.yaml

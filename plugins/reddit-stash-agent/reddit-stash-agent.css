@@ -1,13 +1,36 @@
 .reddit-stash-agent-page {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 2rem 1rem;
 }
 
 .reddit-stash-agent-page h2 {
   margin-bottom: 1rem;
 }
 
-.reddit-stash-agent-nav {
-  white-space: nowrap;
+.reddit-stash-agent-row {
+  display: flex;
+  gap: 1rem;
+  padding: 0.15rem 0;
+}
+
+.reddit-stash-agent-row > span:first-child {
+  flex: 0 0 9rem;
+  color: #adb5bd;
+}
+
+.reddit-stash-agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reddit-stash-agent-log {
+  max-height: 60vh;
+  overflow: auto;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.25rem;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
 }

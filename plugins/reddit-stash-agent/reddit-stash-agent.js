@@ -2,645 +2,239 @@
   "use strict";
 
   const PluginApi = window.PluginApi;
-
   if (!PluginApi) {
-    console.error(
-      "[Reddit Stash Agent] PluginApi unavailable"
-    );
+    console.error("[Reddit Stash Agent] PluginApi unavailable");
     return;
   }
 
+  const PLUGIN_ID = "reddit-stash-agent";
+  const ROUTE = "/plugin/reddit-stash-agent";
+  const POLL_MS = 5000;
+
   const React = PluginApi.React;
+  const h = React.createElement;
+  const { Button, Card, Badge, Spinner, ProgressBar } = PluginApi.libraries.Bootstrap;
+  const { gql, useMutation } = PluginApi.libraries.Apollo;
+  const { useHistory } = PluginApi.libraries.ReactRouterDOM;
 
-  const Bootstrap =
-    PluginApi.libraries.Bootstrap;
-
-  const Apollo =
-    PluginApi.libraries.Apollo;
-
-  const ReactRouterDOM =
-    PluginApi.libraries.ReactRouterDOM;
-
-  const {
-    Button,
-    Card,
-    Badge,
-    Spinner,
-    NavDropdown,
-  } = Bootstrap;
-
-  const {
-    gql,
-    useQuery,
-    useMutation,
-  } = Apollo;
-
-  const {
-    useHistory,
-  } = ReactRouterDOM;
-
-
-  const GET_PLUGIN_CONFIG = gql`
-    query RedditStashAgentConfig {
-      configuration {
-        plugins
-      }
+  const RUN_OPERATION = gql`
+    mutation RedditStashAgentOperation($pluginId: ID!, $args: Map) {
+      runPluginOperation(plugin_id: $pluginId, args: $args)
     }
   `;
-
-
-  const RUN_PLUGIN_OPERATION = gql`
-    mutation RedditStashAgentOperation(
-      $pluginId: ID!
-      $args: Map
-    ) {
-      runPluginOperation(
-        plugin_id: $pluginId
-        args: $args
-      )
-    }
-  `;
-
 
   function formatDate(value) {
-    if (!value) {
-      return "Never";
-    }
-
-    try {
-      return new Date(
-        value
-      ).toLocaleString();
-
-    } catch {
-      return value;
-    }
+    if (!value) return "-";
+    const date = new Date(value);
+    return isNaN(date) ? value : date.toLocaleString();
   }
 
-
-  function extractOutput(result) {
-    if (
-      !result ||
-      !result.data
-    ) {
-      return null;
+  function errorMessage(err) {
+    if (err && err.graphQLErrors && err.graphQLErrors.length) {
+      return err.graphQLErrors.map((e) => e.message).join("; ");
     }
-
-    const operation =
-      result.data.runPluginOperation;
-
-    if (!operation) {
-      return null;
-    }
-
-    if (
-      operation.output !== undefined
-    ) {
-      return operation.output;
-    }
-
-    return operation;
+    return err && err.message ? err.message : String(err);
   }
 
+  const RESULT_VARIANTS = {
+    success: "success",
+    running: "info",
+    failed: "danger",
+    interrupted: "warning",
+    cancelled: "secondary",
+  };
+
+  function Row(props) {
+    return h("div", { className: "reddit-stash-agent-row" }, h("span", null, props.label), h("span", null, props.children));
+  }
 
   function RedditStashAgentPage() {
-    const {
-      data: configData,
-      loading: configLoading,
-      error: configError,
-    } = useQuery(
-      GET_PLUGIN_CONFIG
+    const [runOperation] = useMutation(RUN_OPERATION);
+    const [status, setStatus] = React.useState(null);
+    const [error, setError] = React.useState(null);
+    const [busy, setBusy] = React.useState(false);
+    const [logLines, setLogLines] = React.useState(null);
+
+    const call = React.useCallback(
+      async function (mode) {
+        const result = await runOperation({ variables: { pluginId: PLUGIN_ID, args: { mode: mode } } });
+        return result.data ? result.data.runPluginOperation : null;
+      },
+      [runOperation]
     );
 
-    const [
-      runOperation,
-    ] = useMutation(
-      RUN_PLUGIN_OPERATION
+    const refresh = React.useCallback(
+      async function () {
+        try {
+          setStatus(await call("status"));
+          setError(null);
+        } catch (err) {
+          setStatus(null);
+          setError(errorMessage(err));
+        }
+      },
+      [call]
     );
 
-    const [
-      online,
-      setOnline,
-    ] = React.useState(false);
-
-    const [
-      loading,
-      setLoading,
-    ] = React.useState(false);
-
-    const [
-      status,
-      setStatus,
-    ] = React.useState(null);
-
-    const [
-      error,
-      setError,
-    ] = React.useState(null);
-
-
-    const pluginConfig =
-      configData &&
-      configData.configuration &&
-      configData.configuration.plugins
-        ? configData.configuration.plugins[
-            "reddit-stash-agent"
-          ]
-        : null;
-
-
-    const agentUrl =
-      pluginConfig &&
-      pluginConfig.agent_url
-        ? String(
-            pluginConfig.agent_url
-          )
-        : "";
-
-
-    async function callAgent(mode) {
-      const result =
-        await runOperation({
-          variables: {
-            pluginId:
-              "reddit-stash-agent",
-            args: {
-              mode: mode,
-            },
-          },
-        });
-
-      return extractOutput(
-        result
-      );
+    async function action(mode) {
+      setBusy(true);
+      try {
+        await call(mode);
+        setError(null);
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+      await refresh();
+      setBusy(false);
     }
 
-
-    async function loadStatus() {
-      setLoading(true);
-      setError(null);
-
+    async function toggleLog() {
+      if (logLines) {
+        setLogLines(null);
+        return;
+      }
       try {
-        const health =
-          await callAgent(
-            "health"
-          );
-
-        if (
-          !health ||
-          health.status !== "ok"
-        ) {
-          throw new Error(
-            "Agent health check failed"
-          );
-        }
-
-        setOnline(true);
-
-        const agentStatus =
-          await callAgent(
-            "status"
-          );
-
-        if (!agentStatus) {
-          throw new Error(
-            "Agent status unavailable"
-          );
-        }
-
-        setStatus(
-          agentStatus
-        );
-
+        const result = await call("logs");
+        setLogLines((result && result.lines) || []);
       } catch (err) {
-        console.error(
-          "[Reddit Stash Agent]",
-          err
-        );
-
-        setOnline(false);
-        setStatus(null);
-
-        setError(
-          err &&
-          err.message
-            ? err.message
-            : String(err)
-        );
-
-      } finally {
-        setLoading(false);
+        setError(errorMessage(err));
       }
     }
-
-
-    async function startSync() {
-      setError(null);
-      setLoading(true);
-
-      try {
-        await callAgent(
-          "sync"
-        );
-
-        await new Promise(
-          function (resolve) {
-            setTimeout(
-              resolve,
-              1000
-            );
-          }
-        );
-
-        await loadStatus();
-
-      } catch (err) {
-        console.error(
-          "[Reddit Stash Agent]",
-          err
-        );
-
-        setError(
-          err &&
-          err.message
-            ? err.message
-            : String(err)
-        );
-
-        setLoading(false);
-      }
-    }
-
 
     React.useEffect(
       function () {
-        loadStatus();
-
-        const timer =
-          setInterval(
-            loadStatus,
-            5000
-          );
-
+        refresh();
+        const timer = setInterval(refresh, POLL_MS);
         return function () {
-          clearInterval(
-            timer
-          );
+          clearInterval(timer);
         };
       },
-      []
+      [refresh]
     );
 
+    const online = status !== null;
+    const running = online && status.running;
+    const scheduler = (online && status.scheduler) || {};
+    const summary = (online && status.summary) || {};
 
-    if (configLoading) {
-      return React.createElement(
-        "div",
-        {
-          className:
-            "reddit-stash-agent-page",
-        },
-        "Loading plugin configuration..."
-      );
-    }
-
-
-    if (configError) {
-      return React.createElement(
-        "div",
-        {
-          className:
-            "reddit-stash-agent-page",
-        },
-        "Could not load plugin configuration: ",
-        String(configError)
-      );
-    }
-
-
-    return React.createElement(
+    return h(
       "div",
-      {
-        className:
-          "reddit-stash-agent-page",
-      },
-
-      React.createElement(
-        "h2",
-        null,
-        "Reddit Stash Agent"
-      ),
-
-      React.createElement(
+      { className: "reddit-stash-agent-page" },
+      h("h2", null, "Reddit Stash Agent"),
+      h(
         Card,
-        {
-          className: "mb-3",
-        },
-
-        React.createElement(
+        { className: "mb-3" },
+        h(
           Card.Body,
           null,
-
-          React.createElement(
+          h(
             "div",
-            {
-              className:
-                "d-flex align-items-center gap-2 mb-3",
-            },
-
-            React.createElement(
-              Badge,
-              {
-                bg:
-                  online
-                    ? "success"
-                    : "danger",
-              },
-              online
-                ? "Online"
-                : "Offline"
-            ),
-
-            loading &&
-              React.createElement(
-                Spinner,
-                {
-                  animation: "border",
-                  size: "sm",
-                }
-              )
+            { className: "mb-3" },
+            h(Badge, { variant: online ? "success" : "danger" }, online ? "Online" : "Offline"),
+            online && status.version ? h("span", { className: "ml-2 text-muted" }, "v" + status.version) : null,
+            busy ? h(Spinner, { animation: "border", size: "sm", className: "ml-2" }) : null
           ),
-
-          React.createElement(
-            "div",
-            null,
-            "Agent URL: ",
-            agentUrl ||
-              "Not configured"
-          ),
-
-          status &&
-            React.createElement(
+          online &&
+            h(
               React.Fragment,
               null,
-
-              React.createElement(
-                "div",
-                null,
-                "Sync: ",
-                status.running
-                  ? "Running"
-                  : "Idle"
+              running &&
+                h(
+                  "div",
+                  { className: "mb-3" },
+                  h("div", null, "Step " + status.step + "/" + status.step_count + ": " + (status.step_label || "")),
+                  h(ProgressBar, { now: Math.round((status.progress || 0) * 100), animated: true, striped: true })
+                ),
+              h(
+                Row,
+                { label: "Last result" },
+                h(Badge, { variant: RESULT_VARIANTS[status.last_result] || "secondary" }, status.last_result || "never")
               ),
-
-              React.createElement(
-                "div",
-                null,
-                "Last result: ",
-                status.last_result ||
-                  "Never"
-              ),
-
-              React.createElement(
-                "div",
-                null,
-                "Last trigger: ",
-                status.last_trigger ||
-                  "-"
-              ),
-
-              React.createElement(
-                "div",
-                null,
-                "Last started: ",
-                formatDate(
-                  status.last_started_at
-                )
-              ),
-
-              React.createElement(
-                "div",
-                null,
-                "Last finished: ",
-                formatDate(
-                  status.last_finished_at
-                )
-              ),
-
-              status.scheduler &&
-                React.createElement(
-                  React.Fragment,
-                  null,
-
-                  React.createElement(
-                    "hr",
-                    null
-                  ),
-
-                  React.createElement(
-                    "div",
-                    null,
-                    "Automatic sync: ",
-                    status.scheduler.enabled
-                      ? "Enabled"
-                      : "Disabled"
-                  ),
-
-                  React.createElement(
-                    "div",
-                    null,
-                    "Interval: ",
-                    status.scheduler
-                      .interval_hours,
-                    " hours"
-                  ),
-
-                  React.createElement(
-                    "div",
-                    null,
-                    "Next run: ",
-                    formatDate(
-                      status.scheduler
-                        .next_run_at
-                    )
-                  )
-                )
+              h(Row, { label: "Trigger" }, status.last_trigger || "-"),
+              h(Row, { label: "Started" }, formatDate(status.last_started_at)),
+              h(Row, { label: "Finished" }, formatDate(status.last_finished_at)),
+              status.last_error && h(Row, { label: "Error" }, h("span", { className: "text-danger" }, status.last_error)),
+              Object.keys(summary).length > 0 &&
+                h(
+                  Row,
+                  { label: "Summary" },
+                  Object.keys(summary)
+                    .map((key) => key + ": " + summary[key])
+                    .join(", ")
+                ),
+              h("hr"),
+              h(Row, { label: "Automatic sync" }, scheduler.enabled ? "every " + scheduler.interval_hours + " h" : "off"),
+              h(Row, { label: "Next run" }, formatDate(scheduler.next_run_at))
             ),
-
-          error &&
-            React.createElement(
-              "div",
-              {
-                className:
-                  "text-danger mt-3",
-              },
-              error
-            )
+          error && h("div", { className: "text-danger mt-3" }, error)
         )
       ),
-
-      React.createElement(
-        Button,
-        {
-          variant: "success",
-          disabled:
-            !online ||
-            loading ||
-            (
-              status &&
-              status.running
-            ),
-          onClick: startSync,
-        },
-        status &&
-        status.running
-          ? "Sync Running"
-          : "Start Sync Now"
+      h(
+        "div",
+        { className: "reddit-stash-agent-actions" },
+        h(
+          Button,
+          { variant: "success", disabled: !online || busy || running, onClick: () => action("start") },
+          running ? "Sync running" : "Start sync"
+        ),
+        running && h(Button, { variant: "danger", disabled: busy, onClick: () => action("cancel") }, "Cancel"),
+        h(Button, { variant: "secondary", disabled: busy, onClick: refresh }, "Refresh"),
+        h(
+          Button,
+          { variant: "secondary", disabled: !online || busy, onClick: () => action("config"), title: "Send the plugin settings to the agent" },
+          "Apply scheduler settings"
+        ),
+        h(Button, { variant: "secondary", disabled: !online, onClick: toggleLog }, logLines ? "Hide log" : "Show log")
       ),
-
-      React.createElement(
-        Button,
-        {
-          variant: "secondary",
-          className: "ms-2",
-          disabled: loading,
-          onClick: loadStatus,
-        },
-        "Refresh"
-      )
+      logLines && h("pre", { className: "reddit-stash-agent-log mt-3" }, logLines.join("\n") || "(empty)")
     );
   }
-
 
   function RedditAgentNavItem() {
-    const history =
-      useHistory();
+    const history = useHistory();
 
-    function openAgent(event) {
-      event.preventDefault();
-
-      history.push(
-        "/plugin/reddit-stash-agent"
-      );
-    }
-
-    return React.createElement(
+    return h(
       "div",
-      {
-        className:
-          "col-4 col-sm-3 col-md-2 col-lg-auto nav-link",
-        id:
-          "reddit-stash-agent-nav-container",
-      },
-
-      React.createElement(
+      { className: "col-4 col-sm-3 col-md-2 col-lg-auto nav-link", id: "reddit-stash-agent-nav-container" },
+      h(
         "a",
         {
-          href:
-            "/plugin/reddit-stash-agent",
-          id:
-            "reddit-stash-agent-nav-button",
-          title:
-            "Reddit Agent",
-          "aria-label":
-            "Reddit Agent",
+          href: ROUTE,
+          title: "Reddit Agent",
           className:
             "minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center btn btn-primary",
-          onClick:
-            openAgent,
+          onClick: function (event) {
+            event.preventDefault();
+            history.push(ROUTE);
+          },
         },
-
-        React.createElement(
+        h(
           "svg",
           {
-            "aria-hidden":
-              "true",
-            focusable:
-              "false",
-            className:
-              "svg-inline--fa fa-icon nav-menu-icon d-block d-xl-inline mb-2 mb-xl-0",
-            role:
-              "img",
-            xmlns:
-              "http://www.w3.org/2000/svg",
-            viewBox:
-              "0 0 512 512",
+            "aria-hidden": "true",
+            focusable: "false",
+            className: "svg-inline--fa fa-icon nav-menu-icon d-block d-xl-inline mb-2 mb-xl-0",
+            xmlns: "http://www.w3.org/2000/svg",
+            viewBox: "0 0 512 512",
           },
-
-          React.createElement(
-            "path",
-            {
-              fill:
-                "currentColor",
-              d:
-                "M370.7 133.3C339.5 102.1 297 84.6 252.9 84.6c-73.8 0-136.5 48.1-158.3 114.7L48 183.8C75.7 95.8 157.9 32 252.9 32c58.1 0 113.8 23.1 154.9 64.2L448 56v120H328l42.7-42.7zM141.3 378.7c31.2 31.2 73.7 48.7 117.8 48.7 73.8 0 136.5-48.1 158.3-114.7L464 328.2C436.3 416.2 354.1 480 259.1 480c-58.1 0-113.8-23.1-154.9-64.2L64 456V336h120l-42.7 42.7z",
-            }
-          )
+          h("path", {
+            fill: "currentColor",
+            d: "M370.7 133.3C339.5 102.1 297 84.6 252.9 84.6c-73.8 0-136.5 48.1-158.3 114.7L48 183.8C75.7 95.8 157.9 32 252.9 32c58.1 0 113.8 23.1 154.9 64.2L448 56v120H328l42.7-42.7zM141.3 378.7c31.2 31.2 73.7 48.7 117.8 48.7 73.8 0 136.5-48.1 158.3-114.7L464 328.2C436.3 416.2 354.1 480 259.1 480c-58.1 0-113.8-23.1-154.9-64.2L64 456V336h120l-42.7 42.7z",
+          })
         ),
-
-        React.createElement(
-          "span",
-          null,
-          "Reddit Agent"
-        )
+        h("span", null, "Reddit Agent")
       )
     );
   }
 
+  PluginApi.patch.after("MainNavBar.MenuItems", function () {
+    const result = arguments[arguments.length - 1];
+    if (!result || !result.props) return result;
 
-  PluginApi.patch.after(
-    "MainNavBar.MenuItems",
-    function () {
-      const args =
-        Array.from(
-          arguments
-        );
+    const children = React.Children.toArray(result.props.children);
+    children.push(h(RedditAgentNavItem, { key: "reddit-stash-agent-nav" }));
+    return React.cloneElement(result, { children: children });
+  });
 
-      const result =
-        args[
-          args.length - 1
-        ];
-
-      if (
-        !result ||
-        !result.props
-      ) {
-        return result;
-      }
-
-      const oldChildren =
-        React.Children.toArray(
-          result.props.children
-        );
-
-      const newChildren =
-        oldChildren.concat(
-          React.createElement(
-            RedditAgentNavItem,
-            {
-              key:
-                "reddit-stash-agent-nav",
-            }
-          )
-        );
-
-      return React.cloneElement(
-        result,
-        {
-          children:
-            newChildren,
-        }
-      );
-    }
-  );
-
-
-  PluginApi.register.route(
-    "/plugin/reddit-stash-agent",
-    RedditStashAgentPage
-  );
-
-
-  console.log(
-    "[Reddit Stash Agent] loaded successfully"
-  );
+  PluginApi.register.route(ROUTE, RedditStashAgentPage);
 })();

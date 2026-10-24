@@ -1,113 +1,208 @@
-## Alpha Status
+# Reddit Stash Agent
 
-This project is currently in alpha.
+Downloads new Reddit posts of your [Stash](https://stashapp.cc) performers and files them in Stash:
+scenes and images linked to the performer, and one gallery per Reddit post.
 
-The current release is intended for testing and personal deployments.
+It has two parts:
 
-Breaking changes may happen:
-- Database schema
-- Commands
-- Configuration format
-- Stash integration behaviour
+- **Agent** – a Docker container that does the work and runs the schedule. It has a small HTTP API on port 8787.
+- **Stash plugin** – a "Reddit Agent" page and tasks in Stash, which start syncs and show progress through the agent API.
 
-## Commands
+```
+Stash UI / Stashfeed ──GraphQL──▶ Stash ──plugin──▶ Agent API :8787 ──▶ sync pipeline
+                                    ▲                                       │
+                                    └──────────── GraphQL (API key) ────────┘
+```
 
-All commands use:
+> **Alpha.** The database schema, commands and config can still change between minor versions.
 
+## How a sync works
+
+A Reddit source is a Reddit URL on a Stash performer, e.g. `https://www.reddit.com/user/NAME` or
+`https://www.reddit.com/r/NAME`. Each sync runs these steps:
+
+1. **Sources** – read the Reddit URLs of all performers. Removing a URL in Stash stops that source.
+2. **RSS scan** – fetch the newest posts of each source.
+3. **Download** – download new posts with gallery-dl. A failing post is retried, up to `max_attempts` times.
+4. **Import** – start a Stash scan of the download folder, wait for it, and remember the new scene and image IDs.
+   Covers and previews are generated for new scenes.
+5. **Reconcile** – recover files Stash found that gallery-dl did not report.
+6. **Galleries** – one gallery per post with images, titled after the post, with the post URL.
+7. **Performers** – add the performer to every new scene, image and gallery. Existing performers are kept.
+
+Every step is idempotent: running a sync again only does what is still missing.
+
+## Install the agent
+
+You need Docker with Compose v2, and a folder that is inside a Stash library and is mounted at the **same path** in
+Stash and in the agent (the agent asks Stash to scan it).
+
+```bash
+mkdir reddit-stash-agent && cd reddit-stash-agent
+curl -fLO https://raw.githubusercontent.com/carport727/reddit-stash-agent/main/docker-compose.yml
+curl -fL https://raw.githubusercontent.com/carport727/reddit-stash-agent/main/.env.example -o .env
+mkdir -p config
+curl -fL https://raw.githubusercontent.com/carport727/reddit-stash-agent/main/config/config.example.yaml -o config/config.yaml
+```
+
+1. In `.env`, set `STASH_API_KEY` (Stash → Settings → Security → API Key) and `AGENT_TOKEN`
+   (any long random string, e.g. `openssl rand -hex 32`).
+2. In `config/config.yaml`, set `stash.url` (how the container reaches Stash) and `downloads.root`.
+3. In `docker-compose.yml`, adjust the `/Stash:/Stash` volume to your library path.
+4. Optional, for NSFW or private feeds: export your Reddit cookies as JSON (a list of `{name, value}`) to
+   `config/reddit-cookies.json`.
+
+```bash
+docker compose up -d
+docker compose run --rm reddit-stash-agent doctor
+```
+
+`doctor` checks the Stash connection and API key, the download folder, gallery-dl, the cookies and the token.
+
+Images are published at `ghcr.io/carport727/reddit-stash-agent` (`latest`, `X.Y`, `X.Y.Z`; amd64 and arm64).
+To build locally instead, replace `image:` with `build: .` in `docker-compose.yml`.
+
+### Update
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+The database is migrated automatically on start.
+
+## Install the Stash plugin
+
+**From the plugin source (recommended):** Stash → Settings → Plugins → Available Plugins → **Add Source**
+
+- Name: `Reddit Stash Agent`
+- Source URL: `https://carport727.github.io/reddit-stash-agent/stable/index.yml`
+
+Then install "Reddit Stash Agent" from that source. Updates appear under Installed Plugins.
+
+**Manually:** copy `plugins/reddit-stash-agent/` into Stash's `plugins` folder and reload plugins.
+
+The plugin needs `python3` on the Stash host; the official Stash Docker image has it. It uses only the standard library.
+
+### Plugin settings
+
+| Setting | Key | Meaning |
+|---|---|---|
+| Agent URL | `agent_url` | e.g. `http://192.168.1.10:8787` (as seen from the Stash server) |
+| Agent API token | `agent_token` | the `AGENT_TOKEN` of the agent |
+| Automatic sync enabled | `enabled` | turn the agent's schedule on or off |
+| Sync interval in hours | `interval_hours` | default 6 |
+
+After changing `enabled` or `interval_hours`, run the task **Apply Scheduler Settings**, or click
+"Apply scheduler settings" on the plugin page. The schedule lives in the agent, so it also runs while Stash is closed.
+
+The **Reddit Agent** button in the navigation bar opens a page with the status, live progress, the last summary and log,
+and buttons to start, cancel and refresh.
+
+## Plugin interface (for Stash clients such as Stashfeed)
+
+Plugin ID: `reddit-stash-agent`
+
+### Tasks – `runPluginTask(plugin_id: "reddit-stash-agent", task_name: "…")`
+
+These run in the Stash job queue. None takes arguments or needs input.
+
+| Task name | What it does |
+|---|---|
+| `Start Reddit Sync` | starts a sync (or attaches to a running one) and **waits until it ends**. Job progress follows the pipeline; each step is logged to the Stash log. Fails when the sync fails. |
+| `Cancel Reddit Sync` | cancels the running sync |
+| `Apply Scheduler Settings` | sends `enabled` / `interval_hours` to the agent |
+| `Get Agent Status` | writes the status to the Stash log |
+| `Show Last Sync Log` | writes the last 200 lines of the sync log to the Stash log |
+| `Test Agent Connection` | checks that Stash reaches the agent |
+
+Stash itself marks a plugin job as *finished* even when the plugin fails, and only logs the error. To get the result,
+read the Stash log (the plugin logs `Sync finished: …` or the error) or use the `status` operation below.
+Cancelling the Stash job stops waiting but not the sync; use `Cancel Reddit Sync` for that.
+
+### Operations – `runPluginOperation(plugin_id: "reddit-stash-agent", args: {mode: "…"})`
+
+These run immediately, outside the job queue, and return JSON. Errors come back as GraphQL errors.
+They are safe to poll; `status` is read-only.
+
+| `mode` | Returns |
+|---|---|
+| `health` | `{status, service, version, auth_required}` |
+| `status` | see below |
+| `start` | starts a sync without waiting: `{accepted, pid, message}`. Error "HTTP 409" if one is already running. |
+| `cancel` | `{accepted, message}`. Error "HTTP 409" if nothing is running. |
+| `config` | pushes the plugin settings: `{enabled, interval_hours, next_run_at}` |
+| `logs` | `{log_file, lines: [...]}` (last 200 lines of the current or last run) |
+| `sync` | like the task: starts and blocks until the sync ends. Prefer `start` + polling `status` in clients. |
+
+`status`:
+
+```json
+{
+  "running": true,
+  "last_result": "running",           // null | running | success | failed | cancelled | interrupted
+  "last_trigger": "api",              // cli | api | scheduler
+  "last_started_at": "2026-10-24T20:00:00+00:00",
+  "last_finished_at": null,
+  "last_error": null,
+  "step": 3, "step_count": 7, "step_label": "Download",
+  "progress": 0.286,                  // 0..1
+  "summary": {"sources": 12, "posts_new": 4},
+  "log_file": "/logs/runs/20261024T200000Z-api.log",
+  "scheduler": {"enabled": true, "interval_hours": 6.0, "next_run_at": "2026-10-25T02:00:00+00:00"},
+  "version": "0.7.0"
+}
+```
+
+## Agent HTTP API
+
+Everything except `/api/health` needs `Authorization: Bearer <AGENT_TOKEN>` when a token is set.
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/health` | liveness, version |
+| GET | `/api/status` | status as above |
+| GET / PUT | `/api/config` | schedule, body `{enabled, interval_hours}` |
+| POST | `/api/sync` | start a sync (202; 409 if one is running) |
+| POST | `/api/sync/cancel` | cancel it (202; 409 if none) |
+| GET | `/api/logs?lines=200` | tail of the current or last run log |
+
+Each run writes its own log to `logs/runs/` (the last 30 are kept).
+
+## Command line
+
+```bash
 docker compose run --rm reddit-stash-agent COMMAND
+```
 
-### Basic diagnostics
-- Doctor  
-  Checks configuration and Stash connection:  
-  docker compose run --rm reddit-stash-agent doctor
+| Command | |
+|---|---|
+| `sync` | the whole pipeline (locks against parallel runs, updates the status) |
+| `doctor` | check configuration and connections |
+| `sync_reddit_sources`, `rss_scan`, `download`, `import_reddit`, `reconcile_reddit_files`, `gallery_sync`, `link_reddit_performers` | single steps |
+| `stash_scan` | start a Stash scan of the download folder |
+| `stash_stats` | counts from the agent database |
+| `test_rss user NAME` / `test_rss subreddit NAME` | show the first posts of a feed |
+| `test_gallerydl URL` | download one URL |
 
-### Database test
-- test_db  
-  docker compose run --rm reddit-stash-agent test_db
+Set `dry_run: true` to print the gallery and performer changes instead of writing them.
 
-### RSS test
-- test_rss  
-  Test Reddit RSS access:  
-  docker compose run --rm reddit-stash-agent test_rss
+## Security
 
-### Gallery downloader test
-- test_gallerydl  
-  docker compose run --rm reddit-stash-agent test_gallerydl
+- Keep `AGENT_TOKEN` set. Without it, anyone who reaches port 8787 can start syncs and change the schedule.
+  If Stash runs on the same host, publish the port only on the needed interface.
+- The Stash API key and Reddit cookies stay in `.env` / `config/` and are git-ignored. Never commit them.
+- The plugin authenticates to Stash with the session Stash gives it; it stores no Stash credentials.
 
-### Database
-- migrate_db  
-  Run migrations: docker compose run --rm reddit-stash-agent migrate_db
+## Development
 
-### Reddit source management
-- add_source  
-  Add Reddit source: docker compose run --rm reddit-stash-agent add_source
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+ruff check . && ruff format --check . && pytest
+```
 
-### Sync Reddit sources
-- sync_reddit_sources  
-  docker compose run --rm reddit-stash-agent sync_reddit_sources
+CI runs the same checks. Pushes to `main` publish the Docker image and the plugin source (GitHub Pages).
 
-### Scanning
-- rss_scan  
-  Scan Reddit RSS: docker compose run --rm reddit-stash-agent rss_scan
+## License
 
-- scan  
-  Full Reddit scan: docker compose run --rm reddit-stash-agent scan
-
-### Downloads
-- download  
-  Download Reddit files: docker compose run --rm reddit-stash-agent download
-
-### Stash integration
-- stash_scan  
-  Scan Stash folder and runs Stash metadata scan: docker compose run --rm reddit-stash-agent stash_scan
-
-- stash_stats  
-  Show Stash statistics: docker compose run --rm reddit-stash-agent stash_stats
-
-### Import Reddit files into Stash
-- import_reddit  
-  Links downloaded files with Stash: docker compose run --rm reddit-stash-agent import_reddit
-
-### Link Reddit performers
-- link_reddit_performers  
-  Assign performers: docker compose run --rm reddit-stash-agent link_reddit_performers
-
-### Full pipeline (recommended)
-- sync  
-  This is the command for Pipeline: docker compose run --rm reddit-stash-agent sync
-
-#### Pipeline steps
-1. RSS scan
-2. Download new Reddit files
-3. Import into Stash
-4. Link performers
-
-### Development shell
-
-Open container shell:
-
-docker compose run --rm --entrypoint bash reddit-stash-agent
-
-Then inside:
-
-python
-
-or:
-
-python -m py_compile app/main.py
-
-### Useful debugging commands
-
-View database:
-
-docker compose run --rm --entrypoint bash reddit-stash-agent
-
-Then:
-
-python
-
-Example:
-
-from app.database.database import SessionLocal
-db = SessionLocal()
-print(db.query(...).count())
+[MIT](LICENSE)

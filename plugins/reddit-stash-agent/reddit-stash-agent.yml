@@ -1,19 +1,24 @@
 name: Reddit Stash Agent
-description: Control and monitor the Reddit Stash Agent from Stash.
-version: 0.6.0
+description: Control the Reddit Stash Agent (Reddit to Stash sync) from Stash.
+version: 0.7.0
 url: https://github.com/carport727/reddit-stash-agent
 
 settings:
   agent_url:
     displayName: Agent URL
+    description: Base URL of the agent, e.g. http://192.168.1.10:8787
     type: STRING
-
+  agent_token:
+    displayName: Agent API token
+    description: Same value as AGENT_TOKEN of the agent container. Empty if the agent runs without a token.
+    type: STRING
   enabled:
     displayName: Automatic sync enabled
+    description: Saved here, applied with the task "Apply Scheduler Settings".
     type: BOOLEAN
-
   interval_hours:
-    displayName: Scan interval in hours
+    displayName: Sync interval in hours
+    description: Default 6.
     type: NUMBER
 
 ui:
@@ -29,23 +34,29 @@ exec:
 interface: raw
 errLog: error
 
+# Task names are part of the public interface (Stashfeed calls them); keep them stable.
 tasks:
-  - name: Test Agent Connection
-    description: Test the connection to the Reddit Stash Agent.
-    execArgs:
-      - health
-
-  - name: Get Agent Status
-    description: Get the current Reddit Stash Agent status.
-    execArgs:
-      - status
-
-  - name: Apply Scheduler Settings
-    description: Apply the configured automatic sync settings.
-    execArgs:
-      - config
-
   - name: Start Reddit Sync
-    description: Start a Reddit synchronization.
+    description: Run the full Reddit sync and wait for it, with progress.
     execArgs:
       - sync
+  - name: Cancel Reddit Sync
+    description: Cancel the running Reddit sync.
+    execArgs:
+      - cancel
+  - name: Apply Scheduler Settings
+    description: Send the automatic sync settings to the agent.
+    execArgs:
+      - config
+  - name: Get Agent Status
+    description: Write the agent status to the Stash log.
+    execArgs:
+      - status
+  - name: Show Last Sync Log
+    description: Write the last 200 lines of the agent's sync log to the Stash log.
+    execArgs:
+      - logs
+  - name: Test Agent Connection
+    description: Check that Stash can reach the agent.
+    execArgs:
+      - health

@@ -1,0 +1,30 @@
+# Copy to config/config.yaml. Secrets can also go into .env instead (see .env.example);
+# environment variables override this file.
+
+stash:
+  # URL under which the agent container reaches Stash.
+  url: http://192.168.1.10:9999
+  # Stash > Settings > Security > API Key. Or STASH_API_KEY in .env.
+  api_key: ""
+
+reddit:
+  # Optional browser cookie export (JSON list of {name, value}) for NSFW/private feeds.
+  cookies: /config/reddit-cookies.json
+  # Pause between RSS requests, to avoid Reddit rate limits.
+  request_delay_seconds: 2
+
+downloads:
+  # Folder inside a Stash library. The path must be identical in Stash and in this container.
+  root: /Stash/Download/Reddit
+  # Give up on a post after this many failed downloads.
+  max_attempts: 5
+
+database:
+  path: /data/reddit-agent.db
+
+agent:
+  # Token for the HTTP API; the Stash plugin sends it. Or AGENT_TOKEN in .env.
+  token: ""
+
+# true: galleries and performer links are only printed, not written to Stash.
+dry_run: false

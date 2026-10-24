@@ -1,34 +1,25 @@
 import re
 
+SOURCE_PATTERN = re.compile(
+    r"reddit\.com/(?P<kind>user|u|r)/(?P<name>[A-Za-z0-9_-]+)",
+    re.IGNORECASE,
+)
+
+
+def parse_reddit_url(url):
+    """Return ("user"|"subreddit", lowercase name) or None."""
+    match = SOURCE_PATTERN.search(url or "")
+    if not match:
+        return None
+
+    kind = "subreddit" if match.group("kind").lower() == "r" else "user"
+    return kind, match.group("name").lower()
+
 
 def parse_reddit_urls(urls):
-
-    results = []
-
+    sources = []
     for url in urls or []:
-
-        url = url.lower()
-
-        user = re.search(
-            r"reddit\.com/user/([^/]+)",
-            url
-        )
-
-        if user:
-            results.append({
-                "type": "user",
-                "name": user.group(1)
-            })
-
-        subreddit = re.search(
-            r"reddit\.com/r/([^/]+)",
-            url
-        )
-
-        if subreddit:
-            results.append({
-                "type": "subreddit",
-                "name": subreddit.group(1)
-            })
-
-    return results
+        source = parse_reddit_url(url)
+        if source and source not in sources:
+            sources.append(source)
+    return sources
