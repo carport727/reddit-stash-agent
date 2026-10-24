@@ -66,7 +66,7 @@ def run(config):
                 print(f"Creating gallery: {title}")
                 gallery_id = None if dry_run else str(stash.create_gallery(title, post.url))
                 if gallery_id:
-                    gallery_map[post.url] = {"id": gallery_id, "title": title}
+                    gallery_map[post.url] = {"id": gallery_id, "title": title, "performers": []}
                 created += 1
 
             missing = [i for i in image_ids if i not in gallery_images.get(gallery_id, set())]
@@ -82,14 +82,18 @@ def run(config):
                 images_added += len(missing)
 
             performer_id = performers.get((post.source or "").strip().lower())
-            if performer_id and gallery_id and not dry_run:
+            linked_ids = {str(p["id"]) for p in (gallery or {}).get("performers") or []}
+            if performer_id and gallery_id and not dry_run and performer_id not in linked_ids:
                 if stash.add_performer("gallery", gallery_id, performer_id) == "added":
                     performers_linked += 1
+                    gallery_map[post.url].setdefault("performers", []).append({"id": performer_id})
 
             if gallery_id and not dry_run:
                 for file in files:
-                    file.gallery_id = int(gallery_id)
-                db.commit()
+                    if file.gallery_id != int(gallery_id):
+                        file.gallery_id = int(gallery_id)
+
+        db.commit()
 
     finally:
         db.close()

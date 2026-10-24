@@ -4,6 +4,20 @@ from app.database.database import SessionLocal
 from app.database.models import RedditPost, RedditSource, utcnow
 from app.providers.reddit.rss import RssError, fetch_posts, load_cookie_header
 
+RATE_LIMIT_PAUSE = 60
+
+
+def fetch_with_retry(source, cookie_header):
+    """Reddit answers HTTP 429 after a burst of feeds; wait once and retry."""
+    try:
+        return fetch_posts(source.source_type, source.source_name, cookie_header)
+    except RssError as exc:
+        if "HTTP 429" not in str(exc):
+            raise
+        print(f"Rate limited by Reddit, waiting {RATE_LIMIT_PAUSE} s")
+        time.sleep(RATE_LIMIT_PAUSE)
+        return fetch_posts(source.source_type, source.source_name, cookie_header)
+
 
 def run(config):
     print("Checking Reddit RSS feeds...")
@@ -25,7 +39,7 @@ def run(config):
                 time.sleep(delay)
 
             try:
-                posts = fetch_posts(source.source_type, source.source_name, cookie_header)
+                posts = fetch_with_retry(source, cookie_header)
             except RssError as exc:
                 failed += 1
                 print(f"RSS FAILED {source.source_type}:{source.source_name}: {exc}")

@@ -170,7 +170,7 @@ class StashClient:
                 gallery_filter: { url: { value: "reddit.com", modifier: INCLUDES } }
                 filter: { per_page: -1 }
               ) {
-                galleries { id title urls }
+                galleries { id title urls performers { id } }
               }
             }
             """
