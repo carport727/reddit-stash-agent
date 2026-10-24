@@ -1,6 +1,7 @@
 import os
+import subprocess
 
-from app.commands.download import extract_downloaded_paths
+from app.commands.download import extract_downloaded_paths, is_blocked, short_error
 from app.commands.import_reddit import media_kind
 from app.providers.reddit.rss import reddit_id_from_link
 from app.reddit.parser import parse_reddit_url, parse_reddit_urls
@@ -42,3 +43,12 @@ def test_media_kind():
     assert media_kind("/a/b.mkv") == "video"
     assert media_kind("/a/b.jpeg") == "image"
     assert media_kind("/a/b.json") is None
+
+
+def test_block_detection():
+    blocked = subprocess.CompletedProcess([], 4, "", '[reddit][error] "You\'ve been blocked by network security."\n')
+    rate = subprocess.CompletedProcess([], 4, "", "[reddit][error] Too Many Requests body { font: small }")
+    other = subprocess.CompletedProcess([], 8, "", "[reddit][error] NotFoundError: post\n")
+    assert is_blocked(blocked) and is_blocked(rate)
+    assert not is_blocked(other)
+    assert short_error(other) == "[reddit][error] NotFoundError: post"

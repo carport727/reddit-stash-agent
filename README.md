@@ -57,7 +57,39 @@ docker compose up -d
 docker compose run --rm reddit-stash-agent doctor
 ```
 
-`doctor` checks the Stash connection and API key, the download folder, gallery-dl, the cookies and the token.
+`doctor` checks the Stash connection and API key, the download folder, gallery-dl and its config, the cookies
+and the token.
+
+### Reddit login for downloads (gallery-dl OAuth)
+
+New posts are found through RSS, which works without a login. Downloading uses gallery-dl and Reddit's API, and Reddit
+often refuses that without OAuth ("You've been blocked by network security" or "Too Many Requests"). The agent then
+keeps the posts queued, stops the download step early and does not count these as failed attempts.
+
+To log gallery-dl in, once:
+
+1. On <https://www.reddit.com/prefs/apps>, create an app of type **installed app** with the redirect URI
+   `http://localhost:6414/`. Note the client ID shown under the app name.
+2. On a computer with a browser, install gallery-dl (`pipx install gallery-dl` or `pip install gallery-dl`) and run:
+   ```bash
+   gallery-dl -o extractor.reddit.client-id=CLIENT_ID \
+              -o "extractor.reddit.user-agent=Python:reddit-stash-agent:v1.0 (by /u/YOUR_REDDIT_NAME)" \
+              oauth:reddit
+   ```
+   Open the printed link, allow access, and copy the `refresh-token` that gallery-dl prints.
+3. Create `config/gallery-dl.conf` on the agent host:
+   ```json
+   {
+     "extractor": {
+       "reddit": {
+         "client-id": "CLIENT_ID",
+         "user-agent": "Python:reddit-stash-agent:v1.0 (by /u/YOUR_REDDIT_NAME)",
+         "refresh-token": "REFRESH_TOKEN"
+       }
+     }
+   }
+   ```
+4. Check it: `docker compose run --rm reddit-stash-agent test_gallerydl https://www.reddit.com/r/pics/`
 
 Images are published at `ghcr.io/carport727/reddit-stash-agent` (`latest`, `X.Y`, `X.Y.Z`; amd64 and arm64).
 To build locally instead, replace `image:` with `build: .` in `docker-compose.yml`.

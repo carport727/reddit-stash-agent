@@ -50,12 +50,10 @@ def run_sync(config):
         with sync_lock():
             signal.signal(signal.SIGTERM, _raise_cancelled)
             mark_running(trigger, len(sync.STEPS), os.environ.get("SYNC_LOG_FILE"))
-            summary = {}
-
             try:
                 summary = sync.run(config, on_step=mark_step)
             except (SyncCancelled, KeyboardInterrupt):
-                mark_finished("cancelled", "Cancelled by user", summary)
+                mark_finished("cancelled", "Cancelled by user")
                 print("Sync cancelled", flush=True)
                 return 3
             except StashError as exc:
