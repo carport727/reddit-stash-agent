@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app import __version__
+from app.providers.reddit.rss import login_cookie_status
 from app.runtime import runner
 from app.runtime.sync_state import read_status
 from app.settings import DATA_DIR, load_config
@@ -150,6 +151,7 @@ def health():
 def get_status():
     result = read_status()
     result["scheduler"] = get_scheduler_status()
+    result["reddit_cookies"] = login_cookie_status(config["reddit"]["cookies"])
     result["version"] = __version__
     return result
 

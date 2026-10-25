@@ -1,6 +1,6 @@
 name: Reddit Stash Agent
 description: Control the Reddit Stash Agent (Reddit to Stash sync) from Stash.
-version: 0.7.0
+version: 0.7.1
 url: https://github.com/carport727/reddit-stash-agent
 
 settings:

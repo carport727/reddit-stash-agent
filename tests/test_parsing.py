@@ -69,3 +69,22 @@ def test_cookie_files(tmp_path):
     assert load_cookie_header(str(target)) == "reddit_session=abc"
     assert gallery_dl_cookie_file(str(target), "unused") == str(target)
     assert gallery_dl_cookie_file(str(tmp_path / "missing.json"), str(target)) is None
+
+
+def test_login_cookie_status(tmp_path):
+    import json
+
+    from app.providers.reddit.rss import login_cookie_status
+
+    path = tmp_path / "c.json"
+    now = 1_800_000_000
+    path.write_text(json.dumps([{"name": "reddit_session", "value": "x", "expirationDate": now + 3 * 86400 + 5}]))
+    status = login_cookie_status(str(path), now=now)
+    assert status["present"] and not status["expired"] and status["days_left"] == 3
+
+    path.write_text(json.dumps([{"name": "reddit_session", "value": "x", "expirationDate": now - 1}]))
+    assert login_cookie_status(str(path), now=now)["expired"]
+
+    path.write_text(json.dumps([{"name": "other", "value": "x"}]))
+    assert not login_cookie_status(str(path))["present"]
+    assert not login_cookie_status(str(tmp_path / "missing.json"))["present"]

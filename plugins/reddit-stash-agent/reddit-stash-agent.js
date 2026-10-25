@@ -44,6 +44,38 @@
     cancelled: "secondary",
   };
 
+  // Warn this many days before the Reddit login cookie expires.
+  const COOKIE_WARN_DAYS = 14;
+
+  function cookieInfo(cookies, summary) {
+    if (!cookies) return "-";
+    if (!cookies.present) {
+      return h("span", { className: "text-danger" }, "No reddit_session cookie in " + cookies.file);
+    }
+
+    let text = "session cookie (no expiry date)";
+    let className = "";
+    if (cookies.expires_at) {
+      const days = cookies.days_left;
+      if (cookies.expired) {
+        text = "expired on " + formatDate(cookies.expires_at) + " – export fresh cookies";
+        className = "text-danger font-weight-bold";
+      } else {
+        text = "valid until " + formatDate(cookies.expires_at) + " (" + days + (days === 1 ? " day" : " days") + ")";
+        if (days < COOKIE_WARN_DAYS) className = "text-warning";
+      }
+    }
+
+    const blocked = summary && summary.downloads_blocked > 0;
+    return h(
+      "span",
+      null,
+      h("span", { className: className }, text),
+      blocked &&
+        h("span", { className: "text-danger d-block" }, "Reddit blocked downloads in the last sync – the cookies may be invalid")
+    );
+  }
+
   function Row(props) {
     return h("div", { className: "reddit-stash-agent-row" }, h("span", null, props.label), h("span", null, props.children));
   }
@@ -164,7 +196,9 @@
                 ),
               h("hr"),
               h(Row, { label: "Automatic sync" }, scheduler.enabled ? "every " + scheduler.interval_hours + " h" : "off"),
-              h(Row, { label: "Next run" }, formatDate(scheduler.next_run_at))
+              h(Row, { label: "Next run" }, formatDate(scheduler.next_run_at)),
+              h("hr"),
+              h(Row, { label: "Reddit cookies" }, cookieInfo(status.reddit_cookies, summary))
             ),
           error && h("div", { className: "text-danger mt-3" }, error)
         )

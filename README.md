@@ -70,7 +70,8 @@ therefore uses the cookies of a logged-in Reddit session for RSS and gallery-dl,
    (then set `reddit.cookies: /config/reddit-cookies.txt`).
 2. Check it: `docker compose run --rm reddit-stash-agent test_gallerydl https://www.reddit.com/r/pics/`
 
-The `reddit_session` cookie stays valid for months. When downloads get blocked again, export fresh cookies.
+The `reddit_session` cookie stays valid for months. The plugin page shows its expiry date (yellow two weeks before,
+red when expired). When downloads get blocked again, export fresh cookies.
 While Reddit blocks, the agent keeps the posts queued, stops the download step early and does not count these
 as failed attempts.
 
@@ -167,7 +168,9 @@ They are safe to poll; `status` is read-only.
   "summary": {"sources": 12, "posts_new": 4},
   "log_file": "/logs/runs/20261024T200000Z-api.log",
   "scheduler": {"enabled": true, "interval_hours": 6.0, "next_run_at": "2026-10-25T02:00:00+00:00"},
-  "version": "0.7.0"
+  "reddit_cookies": {"file": "/config/reddit-cookies.json", "present": true,
+                     "expires_at": "2027-01-21T10:00:00+00:00", "expired": false, "days_left": 88},
+  "version": "0.7.1"
 }
 ```
 

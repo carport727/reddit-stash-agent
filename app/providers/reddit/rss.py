@@ -1,5 +1,7 @@
 import json
 import os
+import time
+from datetime import UTC, datetime
 
 import feedparser
 
@@ -13,7 +15,7 @@ class RssError(Exception):
 
 
 def read_netscape_cookies(path):
-    """(name, value) pairs from a Netscape cookies.txt."""
+    """(name, value, expires) tuples from a Netscape cookies.txt; expires 0 means session cookie."""
     pairs = []
     with open(path) as f:
         for line in f:
@@ -23,8 +25,44 @@ def read_netscape_cookies(path):
                 continue
             fields = line.rstrip("\n").split("\t")
             if len(fields) == 7:
-                pairs.append((fields[5], fields[6]))
+                expires = int(fields[4]) if fields[4].isdigit() else 0
+                pairs.append((fields[5], fields[6], expires))
     return pairs
+
+
+def read_cookies(path):
+    """(name, value, expires) tuples from a JSON browser export or a Netscape cookies.txt."""
+    if not path.endswith(".json"):
+        return read_netscape_cookies(path)
+    with open(path) as f:
+        return [(c["name"], c["value"], int(c.get("expirationDate") or 0)) for c in json.load(f)]
+
+
+LOGIN_COOKIE = "reddit_session"
+
+
+def login_cookie_status(path, now=None):
+    """Expiry of the Reddit login cookie, for the status page."""
+    status = {"file": path, "present": False, "expires_at": None, "expired": False, "days_left": None}
+    if not path or not os.path.exists(path):
+        return status
+
+    try:
+        cookies = read_cookies(path)
+    except (OSError, ValueError, KeyError, TypeError):
+        return status
+
+    expires = next((e for name, _, e in cookies if name == LOGIN_COOKIE), None)
+    if expires is None:
+        return status
+
+    status["present"] = True
+    if expires:
+        now = now or time.time()
+        status["expires_at"] = datetime.fromtimestamp(expires, UTC).isoformat()
+        status["expired"] = expires <= now
+        status["days_left"] = int((expires - now) // 86400)
+    return status
 
 
 def load_cookie_header(path):
@@ -33,11 +71,7 @@ def load_cookie_header(path):
         return ""
 
     try:
-        if not path.endswith(".json"):
-            return "; ".join(f"{name}={value}" for name, value in read_netscape_cookies(path))
-        with open(path) as f:
-            cookies = json.load(f)
-        return "; ".join(f"{cookie['name']}={cookie['value']}" for cookie in cookies)
+        return "; ".join(f"{name}={value}" for name, value, _ in read_cookies(path))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"WARNING: could not read Reddit cookies from {path}: {exc}")
         return ""
