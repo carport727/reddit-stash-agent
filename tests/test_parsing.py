@@ -52,3 +52,20 @@ def test_block_detection():
     assert is_blocked(blocked) and is_blocked(rate)
     assert not is_blocked(other)
     assert short_error(other) == "[reddit][error] NotFoundError: post"
+
+
+def test_cookie_files(tmp_path):
+    import json
+
+    from app.providers.reddit.rss import gallery_dl_cookie_file, load_cookie_header
+
+    source = tmp_path / "c.json"
+    source.write_text(json.dumps([{"name": "reddit_session", "value": "abc", "domain": ".reddit.com"}]))
+    target = tmp_path / "data" / "c.txt"
+
+    assert gallery_dl_cookie_file(str(source), str(target)) == str(target)
+    assert (target.stat().st_mode & 0o777) == 0o600
+    assert load_cookie_header(str(source)) == "reddit_session=abc"
+    assert load_cookie_header(str(target)) == "reddit_session=abc"
+    assert gallery_dl_cookie_file(str(target), "unused") == str(target)
+    assert gallery_dl_cookie_file(str(tmp_path / "missing.json"), str(target)) is None

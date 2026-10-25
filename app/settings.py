@@ -21,6 +21,8 @@ DEFAULTS = {
     "downloads": {
         "root": "/Stash/Download/Reddit",
         "max_attempts": 5,
+        # gallery-dl browser emulation (headers/TLS); Reddit blocks the default client. Empty to disable.
+        "gallery_dl_browser": "firefox",
     },
     "database": {
         "path": "/data/reddit-agent.db",

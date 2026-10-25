@@ -8,7 +8,8 @@ stash:
   api_key: ""
 
 reddit:
-  # Optional browser cookie export (JSON list of {name, value}) for NSFW/private feeds.
+  # Cookies of a logged-in Reddit session, used for RSS and gallery-dl. Without them Reddit blocks
+  # downloads. Browser export as JSON (list of {name, value, domain, ...}) or Netscape cookies.txt.
   cookies: /config/reddit-cookies.json
   # Pause between RSS requests, to avoid Reddit rate limits.
   request_delay_seconds: 2
@@ -18,6 +19,8 @@ downloads:
   root: /Stash/Download/Reddit
   # Give up on a post after this many failed downloads.
   max_attempts: 5
+  # gallery-dl imitates this browser; Reddit blocks the default client.
+  gallery_dl_browser: firefox
 
 database:
   path: /data/reddit-agent.db

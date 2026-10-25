@@ -12,18 +12,77 @@ class RssError(Exception):
     pass
 
 
+def read_netscape_cookies(path):
+    """(name, value) pairs from a Netscape cookies.txt."""
+    pairs = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#HttpOnly_"):
+                line = line[len("#HttpOnly_") :]
+            if not line.strip() or line.startswith("#"):
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) == 7:
+                pairs.append((fields[5], fields[6]))
+    return pairs
+
+
 def load_cookie_header(path):
     """Build a Cookie header from a browser export (JSON list of {name, value})."""
     if not path or not os.path.exists(path):
         return ""
 
     try:
+        if not path.endswith(".json"):
+            return "; ".join(f"{name}={value}" for name, value in read_netscape_cookies(path))
         with open(path) as f:
             cookies = json.load(f)
         return "; ".join(f"{cookie['name']}={cookie['value']}" for cookie in cookies)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"WARNING: could not read Reddit cookies from {path}: {exc}")
         return ""
+
+
+def gallery_dl_cookie_file(source, target):
+    """Cookie file for gallery-dl (Netscape format).
+
+    A .txt source is used as is. A browser JSON export is converted to target (mode 600).
+    Returns None when there are no cookies.
+    """
+    if not source or not os.path.exists(source):
+        return None
+    if not source.endswith(".json"):
+        return source
+
+    try:
+        with open(source) as f:
+            cookies = json.load(f)
+    except (OSError, ValueError) as exc:
+        print(f"WARNING: could not read Reddit cookies from {source}: {exc}")
+        return None
+
+    lines = ["# Netscape HTTP Cookie File"]
+    for cookie in cookies:
+        domain = cookie.get("domain") or ".reddit.com"
+        lines.append(
+            "\t".join(
+                [
+                    domain,
+                    "TRUE" if domain.startswith(".") else "FALSE",
+                    cookie.get("path") or "/",
+                    "TRUE" if cookie.get("secure", True) else "FALSE",
+                    str(int(cookie.get("expirationDate") or 0)),
+                    cookie["name"],
+                    cookie["value"],
+                ]
+            )
+        )
+
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return target
 
 
 def get_rss_url(source_type, source_name):

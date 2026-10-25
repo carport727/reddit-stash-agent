@@ -3,11 +3,15 @@ import subprocess
 
 from app.database.database import SessionLocal
 from app.database.models import DownloadedFile, RedditPost
+from app.providers.reddit.rss import gallery_dl_cookie_file
+from app.settings import DATA_DIR
 
 GALLERY_DL_TIMEOUT = 15 * 60
 GALLERY_DL_CONFIG = "/config/gallery-dl.conf"
 
-# Reddit refuses the request itself (IP block, rate limit, missing OAuth). Not the post's fault:
+GALLERY_DL_COOKIES = os.path.join(DATA_DIR, "gallery-dl-cookies.txt")
+
+# Reddit refuses the request itself (IP block, rate limit, expired cookies). Not the post's fault:
 # do not count it as an attempt, and stop the step when it keeps happening.
 BLOCK_MARKERS = ("blocked by network security", "too many requests", "403 forbidden", "429")
 MAX_CONSECUTIVE_BLOCKS = 3
@@ -51,10 +55,27 @@ def extract_downloaded_paths(stdout, download_root):
     return list(dict.fromkeys(paths))
 
 
-def run_gallery_dl(url, download_root, config_file=GALLERY_DL_CONFIG):
-    command = ["gallery-dl", "-d", download_root, "--filename", "{id} {filename}.{extension}"]
-    if config_file and os.path.exists(config_file):
-        command += ["--config", config_file]
+def gallery_dl_options(config):
+    """Extra gallery-dl arguments: optional config file, Reddit cookies, browser emulation.
+
+    Reddit blocks plain gallery-dl requests; logged-in cookies plus Firefox headers get through.
+    """
+    options = []
+    if os.path.exists(GALLERY_DL_CONFIG):
+        options += ["--config", GALLERY_DL_CONFIG]
+
+    cookie_file = gallery_dl_cookie_file(config["reddit"]["cookies"], GALLERY_DL_COOKIES)
+    if cookie_file:
+        options += ["--cookies", cookie_file]
+
+    browser = config["downloads"].get("gallery_dl_browser")
+    if browser:
+        options += ["-o", f"browser={browser}"]
+    return options
+
+
+def run_gallery_dl(url, download_root, options=()):
+    command = ["gallery-dl", "-d", download_root, "--filename", "{id} {filename}.{extension}", *options]
 
     return subprocess.run(
         command + [url],
@@ -67,6 +88,10 @@ def run_gallery_dl(url, download_root, config_file=GALLERY_DL_CONFIG):
 def run(config):
     download_root = config["downloads"]["root"]
     max_attempts = int(config["downloads"].get("max_attempts") or 5)
+
+    options = gallery_dl_options(config)
+    if "--cookies" not in options and "--config" not in options:
+        print("No Reddit cookies for gallery-dl; Reddit usually blocks downloads without them (see README).")
 
     db = SessionLocal()
     downloaded = created_files = failed = empty = blocked = consecutive_blocks = 0
@@ -85,15 +110,13 @@ def run(config):
         )
 
         print(f"Downloading Reddit media: {len(posts)} pending, {given_up} given up after {max_attempts} attempts")
-        if not os.path.exists(GALLERY_DL_CONFIG):
-            print(f"No {GALLERY_DL_CONFIG}; Reddit usually blocks gallery-dl without OAuth (see README).")
 
         for post in posts:
             print(f"Downloading: {post.url}")
             post.download_attempts = (post.download_attempts or 0) + 1
 
             try:
-                output = run_gallery_dl(post.url, download_root)
+                output = run_gallery_dl(post.url, download_root, options)
             except subprocess.TimeoutExpired:
                 post.last_error = "gallery-dl timed out"
                 failed += 1
@@ -111,7 +134,7 @@ def run(config):
                 if consecutive_blocks >= MAX_CONSECUTIVE_BLOCKS:
                     print(
                         f"Reddit blocked {consecutive_blocks} downloads in a row; stopping this step. "
-                        "Pending posts stay queued. Configure Reddit OAuth for gallery-dl (see README)."
+                        "Pending posts stay queued. Export fresh Reddit cookies (see README)."
                     )
                     break
                 continue

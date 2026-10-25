@@ -1,8 +1,8 @@
 import os
 import shutil
 
-from app.commands.download import GALLERY_DL_CONFIG
-from app.providers.reddit.rss import load_cookie_header
+from app.commands.download import GALLERY_DL_CONFIG, GALLERY_DL_COOKIES
+from app.providers.reddit.rss import gallery_dl_cookie_file, load_cookie_header
 from app.stash.client import StashClient, StashError
 
 
@@ -31,10 +31,11 @@ def run(config):
         "mount the folder that Stash scans",
     )
     check(shutil.which("gallery-dl") is not None, "gallery-dl installed")
+    cookie_file = gallery_dl_cookie_file(config["reddit"]["cookies"], GALLERY_DL_COOKIES)
     check(
-        os.path.exists(GALLERY_DL_CONFIG),
-        f"gallery-dl config: {GALLERY_DL_CONFIG}",
-        "Reddit usually blocks downloads without OAuth; see README 'Reddit login for downloads'",
+        bool(cookie_file) or os.path.exists(GALLERY_DL_CONFIG),
+        "Reddit login for gallery-dl (cookies or gallery-dl.conf)",
+        "Reddit blocks downloads without it; see README 'Reddit login'",
     )
     check(bool(load_cookie_header(config["reddit"]["cookies"])), f"Reddit cookies: {config['reddit']['cookies']}")
     check(
