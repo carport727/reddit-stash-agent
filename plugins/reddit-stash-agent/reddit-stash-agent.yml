@@ -1,6 +1,6 @@
 name: Reddit Stash Agent
 description: Control the Reddit Stash Agent (Reddit to Stash sync) from Stash.
-version: 0.7.1
+version: 0.8.0
 url: https://github.com/carport727/reddit-stash-agent
 
 settings:
@@ -40,6 +40,10 @@ tasks:
     description: Run the full Reddit sync and wait for it, with progress.
     execArgs:
       - sync
+  - name: Download Reddit Post
+    description: Download one Reddit post or gallery (argument url) and import it into Stash.
+    execArgs:
+      - download_post
   - name: Cancel Reddit Sync
     description: Cancel the running Reddit sync.
     execArgs:

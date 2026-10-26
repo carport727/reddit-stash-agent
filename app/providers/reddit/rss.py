@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 import time
 from datetime import UTC, datetime
 
@@ -112,10 +113,13 @@ def gallery_dl_cookie_file(source, target):
             )
         )
 
+    # Written atomically: a sync and a single post download may convert the file at the same time.
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    temp_file = f"{target}.{os.getpid()}.{threading.get_ident()}.tmp"
+    fd = os.open(temp_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write("\n".join(lines) + "\n")
+    os.replace(temp_file, target)
     return target
 
 

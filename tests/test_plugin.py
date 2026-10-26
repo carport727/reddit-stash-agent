@@ -30,6 +30,10 @@ class FakeAgent:
             return {"lines": ["boom"]}
         if path == "/api/config":
             return dict(body, next_run_at=None)
+        if path == "/api/download":
+            return self.statuses[0]
+        if path.startswith("/api/download/"):
+            return self.statuses.pop(0) if len(self.statuses) > 1 else self.statuses[0]
         raise AssertionError(path)
 
 
@@ -76,3 +80,29 @@ def test_config_defaults_interval():
 def test_agent_requires_url():
     with pytest.raises(RuntimeError, match="Agent URL"):
         plugin.Agent({})
+
+
+def test_download_post_follows_job(capsys):
+    queued = {"id": "j1", "status": "queued", "log": []}
+    running_job = {"id": "j1", "status": "running", "step": 3, "step_count": 5, "step_label": "Download",
+                   "progress": 0.4, "log": ["Downloading: x"]}  # fmt: skip
+    done = dict(running_job, status="success", log=["Downloading: x", "Done"], result={"image_ids": ["1"]})
+    agent = FakeAgent([queued, running_job, done])
+
+    result = plugin.run_mode("download_post", agent, {}, args={"url": "https://redd.it/abc"})
+    assert result["result"]["image_ids"] == ["1"]
+    assert agent.calls[0] == ("POST", "/api/download", {"url": "https://redd.it/abc"})
+    err = capsys.readouterr().err
+    assert err.count("Downloading: x") == 1
+    assert "\x01i\x02Step 3/5: Download" in err
+
+
+def test_download_post_reports_error_code():
+    failed = {"id": "j1", "status": "failed", "error_code": "cookies_expired", "error": "expired", "log": []}
+    with pytest.raises(RuntimeError, match=r"\(cookies_expired\): expired"):
+        plugin.run_mode("download_post", FakeAgent([failed]), {}, args={"url": "https://redd.it/abc"})
+
+
+def test_download_post_needs_url():
+    with pytest.raises(RuntimeError, match="url"):
+        plugin.run_mode("download_post", FakeAgent([{}]), {}, args={})

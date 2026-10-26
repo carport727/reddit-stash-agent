@@ -123,11 +123,12 @@ Plugin ID: `reddit-stash-agent`
 
 ### Tasks – `runPluginTask(plugin_id: "reddit-stash-agent", task_name: "…")`
 
-These run in the Stash job queue. None takes arguments or needs input.
+These run in the Stash job queue. Only `Download Reddit Post` takes an argument (`args_map: {url: "…"}`).
 
 | Task name | What it does |
 |---|---|
 | `Start Reddit Sync` | starts a sync (or attaches to a running one) and **waits until it ends**. Job progress follows the pipeline; each step is logged to the Stash log. Fails when the sync fails. |
+| `Download Reddit Post` | downloads one post (argument `url`, see [Single post download](#single-post-download)) and waits for it, with progress in the Stash log |
 | `Cancel Reddit Sync` | cancels the running sync |
 | `Apply Scheduler Settings` | sends `enabled` / `interval_hours` to the agent |
 | `Get Agent Status` | writes the status to the Stash log |
@@ -137,6 +138,7 @@ These run in the Stash job queue. None takes arguments or needs input.
 Stash itself marks a plugin job as *finished* even when the plugin fails, and only logs the error. To get the result,
 read the Stash log (the plugin logs `Sync finished: …` or the error) or use the `status` operation below.
 Cancelling the Stash job stops waiting but not the sync; use `Cancel Reddit Sync` for that.
+The created IDs of `Download Reddit Post` are in `status.last_download.result` and in the `download_status` operation.
 
 ### Operations – `runPluginOperation(plugin_id: "reddit-stash-agent", args: {mode: "…"})`
 
@@ -152,6 +154,8 @@ They are safe to poll; `status` is read-only.
 | `config` | pushes the plugin settings: `{enabled, interval_hours, next_run_at}` |
 | `logs` | `{log_file, lines: [...]}` (last 200 lines of the current or last run) |
 | `sync` | like the task: starts and blocks until the sync ends. Prefer `start` + polling `status` in clients. |
+| `download_post` | args `{url, wait}`: downloads one post. Blocks until done and returns the finished job (see below); with `wait: false` it returns the queued job at once. Fails with `Download failed (<error_code>): …` |
+| `download_status` | args `{id}`: one download job; without `id` the last 20 (`{downloads: [...]}`) |
 
 `status`:
 
@@ -170,9 +174,67 @@ They are safe to poll; `status` is read-only.
   "scheduler": {"enabled": true, "interval_hours": 6.0, "next_run_at": "2026-10-25T02:00:00+00:00"},
   "reddit_cookies": {"file": "/config/reddit-cookies.json", "present": true,
                      "expires_at": "2027-01-21T10:00:00+00:00", "expired": false, "days_left": 88},
-  "version": "0.7.1"
+  "last_download": {"id": "3f2a9c1b7d4e", "status": "success", "...": "job as below, without log"},
+  "version": "0.8.0"
 }
 ```
+
+### Single post download
+
+Downloads one Reddit post (single image, video or gallery) with the agent's Reddit cookies and the same pipeline as the
+sync: gallery-dl, Stash scan of the new files, one Stash gallery per post with images, and the performer whose Reddit
+URL (`reddit.com/user/NAME` or `reddit.com/r/NAME`) matches the post's author or subreddit. The post is recorded in the
+agent database, so the regular sync never downloads it again. Asking for a post that is already in the database
+downloads nothing and returns the existing IDs (`already_downloaded: true`).
+
+Accepted links: `reddit.com/r/SUB/comments/ID/…`, `reddit.com/user/NAME/comments/ID/…`, `reddit.com/comments/ID`,
+`reddit.com/gallery/ID`, `redd.it/ID` (any subdomain such as `old.` or `m.`) and app share links
+`reddit.com/r/SUB/s/CODE`. Direct media links (`i.redd.it`, `v.redd.it`) are rejected; send the post link.
+
+Downloads run one at a time, independent of the sync. A second request for a link that is still queued or running
+returns the same job. The last 50 jobs are kept in `data/post-downloads.json`.
+
+Job:
+
+```json
+{
+  "id": "3f2a9c1b7d4e",
+  "url": "https://www.reddit.com/r/pics/comments/abc123/title/",
+  "status": "success",                // queued | running | success | failed | interrupted
+  "created_at": "…", "started_at": "…", "finished_at": "…",
+  "step": 5, "step_count": 5, "step_label": null, "progress": 1.0,
+  "error": null,
+  "error_code": null,                 // see below
+  "result": {
+    "reddit_id": "t3_abc123",
+    "post_url": "https://www.reddit.com/r/pics/comments/abc123/title/",
+    "title": "…",
+    "source": "someone",
+    "already_downloaded": false,
+    "scene_ids": [],
+    "image_ids": ["101", "102"],
+    "gallery_id": "55",               // null when the post has no images
+    "performer_id": "7",              // null when no performer has a matching Reddit URL
+    "files": 2,
+    "not_imported": 0                 // files Stash had not indexed yet; the next sync retries them
+  },
+  "log": ["--- 1/5 Check link ---", "…"]
+}
+```
+
+`error_code`:
+
+| Code | Meaning |
+|---|---|
+| `invalid_url` | not a Reddit post link (the API answers HTTP 400 before queueing) |
+| `cookies_expired` | the `reddit_session` cookie is past its expiry date; export fresh cookies |
+| `cookies_missing` | Reddit refused the request and no login cookies are configured |
+| `reddit_blocked` | Reddit refused the request (HTTP 403/429, network block) although cookies are set; often expired cookies |
+| `not_found` | the post does not exist, was deleted, or a share link does not lead to a post |
+| `no_media` | the post has nothing gallery-dl can download (e.g. text post) |
+| `download_failed` | gallery-dl failed or timed out |
+| `stash_error` | Stash was not reachable or rejected a request |
+| `internal` | unexpected error, see the agent log |
 
 ## Agent HTTP API
 
@@ -186,6 +248,14 @@ Everything except `/api/health` needs `Authorization: Bearer <AGENT_TOKEN>` when
 | POST | `/api/sync` | start a sync (202; 409 if one is running) |
 | POST | `/api/sync/cancel` | cancel it (202; 409 if none) |
 | GET | `/api/logs?lines=200` | tail of the current or last run log |
+| POST | `/api/download` | download one post, body `{"url": "…", "wait": false}`. 202 with the queued job; with `wait: true` it blocks until the job ends (200, max. 30 min). 400 for a link that is not a Reddit post. |
+| GET | `/api/download/{id}` | one download job (404 if unknown) |
+| GET | `/api/downloads?limit=20` | the last download jobs, newest first |
+
+```bash
+curl -H "Authorization: Bearer $AGENT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"url": "https://www.reddit.com/r/pics/comments/abc123/", "wait": true}' http://localhost:8787/api/download
+```
 
 Each run writes its own log to `logs/runs/` (the last 30 are kept).
 
@@ -203,6 +273,7 @@ docker compose run --rm reddit-stash-agent COMMAND
 | `stash_scan` | start a Stash scan of the download folder |
 | `stash_stats` | counts from the agent database |
 | `test_rss user NAME` / `test_rss subreddit NAME` | show the first posts of a feed |
+| `download_post URL` | download one post and import it into Stash (same as `/api/download`, prints the result) |
 | `test_gallerydl URL` | download one URL |
 
 Set `dry_run: true` to print the gallery and performer changes instead of writing them.

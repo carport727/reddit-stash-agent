@@ -6,12 +6,13 @@ from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from app import __version__
 from app.providers.reddit.rss import login_cookie_status
-from app.runtime import runner
+from app.reddit.parser import parse_post_url
+from app.runtime import post_downloads, runner
 from app.runtime.sync_state import read_status
 from app.settings import DATA_DIR, load_config
 
@@ -26,9 +27,18 @@ config = load_config()
 scheduler = BackgroundScheduler(timezone="UTC")
 
 
+# POST /api/download with wait=true returns 202 with the running job after this long.
+DOWNLOAD_WAIT_SECONDS = 30 * 60
+
+
 class SchedulerConfig(BaseModel):
     enabled: bool = False
     interval_hours: float = Field(default=6, gt=0)
+
+
+class DownloadRequest(BaseModel):
+    url: str
+    wait: bool = False
 
 
 def load_scheduler_config():
@@ -125,6 +135,7 @@ async def lifespan(app):
     if not config["agent"]["token"]:
         print("WARNING: AGENT_TOKEN is not set; the API is open to everyone who can reach this port.", flush=True)
 
+    post_downloads.mark_interrupted()
     scheduler.start()
     try:
         apply_scheduler_config(load_scheduler_config())
@@ -152,6 +163,7 @@ def get_status():
     result = read_status()
     result["scheduler"] = get_scheduler_status()
     result["reddit_cookies"] = login_cookie_status(config["reddit"]["cookies"])
+    result["last_download"] = post_downloads.last_job()
     result["version"] = __version__
     return result
 
@@ -192,3 +204,32 @@ def cancel_sync():
 def get_logs(lines: int = Query(default=200, ge=1, le=5000)):
     log_file = read_status().get("log_file")
     return {"log_file": log_file, "lines": runner.tail(log_file, lines).splitlines()}
+
+
+@app.post("/api/download", status_code=status.HTTP_202_ACCEPTED, dependencies=api)
+def download_post(request: DownloadRequest, response: Response):
+    """Queue a download of one Reddit post. wait=true blocks until it ends (200)."""
+    try:
+        parse_post_url(request.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    job = post_downloads.submit(config, request.url)
+    if request.wait:
+        job = post_downloads.wait(job["id"], DOWNLOAD_WAIT_SECONDS)
+        if job["status"] not in post_downloads.ACTIVE:
+            response.status_code = status.HTTP_200_OK
+    return job
+
+
+@app.get("/api/download/{job_id}", dependencies=api)
+def get_download(job_id: str):
+    job = post_downloads.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown download")
+    return job
+
+
+@app.get("/api/downloads", dependencies=api)
+def list_downloads(limit: int = Query(default=20, ge=1, le=post_downloads.KEEP_JOBS)):
+    return {"downloads": post_downloads.list_jobs(limit)}

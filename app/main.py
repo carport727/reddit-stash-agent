@@ -23,6 +23,9 @@ Single pipeline steps:
   gallery_sync                  create/update one gallery per Reddit post
   link_reddit_performers        add performers to scenes and images
 
+Single post:
+  download_post URL             download one post (or gallery) and import it into Stash
+
 Tools:
   stash_scan                    start a Stash scan of the download folder
   stash_stats                   counts from the agent database
@@ -108,6 +111,22 @@ def main(argv):
         from app.commands import test_rss
 
         test_rss.run(config, *args)
+        return 0
+
+    if command == "download_post":
+        if len(args) != 1:
+            print("Usage: download_post URL")
+            return 2
+        import json
+
+        from app.commands.download_post import PostDownloadError
+        from app.commands.download_post import run as download_post
+
+        try:
+            print(json.dumps(download_post(config, args[0]), indent=2))
+        except PostDownloadError as exc:
+            print(f"ERROR ({exc.code}): {exc}")
+            return 1
         return 0
 
     if command == "test_gallerydl":

@@ -35,13 +35,73 @@ def wait_for_paths(map_loader, expected_paths, label, attempts=6, interval=5):
     return object_map
 
 
+def import_files(stash, db, files, scan_paths, lookup_root):
+    """Scan scan_paths in Stash and store the scene/image IDs of files (DownloadedFile rows).
+
+    lookup_root limits the Stash queries that find the new objects. Commits the session.
+    Returns counts and the scene IDs that still need covers/previews.
+    """
+    linked_scenes = linked_images = missing = ignored = 0
+    generate_ids = []
+
+    videos, images = [], []
+    for file in files:
+        kind = media_kind(file.path)
+        if kind == "video":
+            videos.append(file)
+        elif kind == "image":
+            images.append(file)
+        else:
+            file.ignored = True
+            ignored += 1
+            print(f"Ignoring unsupported file type: {file.path}")
+    db.commit()
+
+    if videos or images:
+        print(f"Starting Stash scan of {', '.join(scan_paths)} ({len(videos)} videos, {len(images)} images)")
+        job_id = stash.scan_path(scan_paths)
+        status = stash.wait_for_job(job_id)
+        print(f"Stash scan job {job_id}: {status}")
+
+    if images:
+        image_map = wait_for_paths(lambda: stash.get_image_file_map(lookup_root), {f.path for f in images}, "Images")
+        for file in images:
+            image_id = image_map.get(file.path)
+            if not image_id:
+                missing += 1
+                print(f"Image not found in Stash: {file.path}")
+                continue
+            file.image_id = int(image_id)
+            file.stash_imported = True
+            linked_images += 1
+
+    if videos:
+        scene_map = wait_for_paths(lambda: stash.get_scene_file_map(lookup_root), {f.path for f in videos}, "Scenes")
+        for file in videos:
+            scene_id = scene_map.get(file.path)
+            if not scene_id:
+                missing += 1
+                print(f"Scene not found in Stash: {file.path}")
+                continue
+            file.scene_id = int(scene_id)
+            file.stash_imported = True
+            generate_ids.append(scene_id)
+            linked_scenes += 1
+
+    db.commit()
+    return {
+        "scenes_linked": linked_scenes,
+        "images_linked": linked_images,
+        "import_missing": missing,
+        "ignored": ignored,
+        "generate_ids": generate_ids,
+    }
+
+
 def run(config):
     root = config["downloads"]["root"]
     stash = StashClient.from_config(config)
     db = SessionLocal()
-
-    linked_scenes = linked_images = missing = ignored = 0
-    generate_ids = []
 
     try:
         files = (
@@ -53,51 +113,7 @@ def run(config):
         if not files:
             return {"scenes_linked": 0, "images_linked": 0, "import_missing": 0}
 
-        videos, images = [], []
-        for file in files:
-            kind = media_kind(file.path)
-            if kind == "video":
-                videos.append(file)
-            elif kind == "image":
-                images.append(file)
-            else:
-                file.ignored = True
-                ignored += 1
-                print(f"Ignoring unsupported file type: {file.path}")
-        db.commit()
-
-        if videos or images:
-            print(f"Starting Stash scan of {root} ({len(videos)} videos, {len(images)} images)")
-            job_id = stash.scan_path(root)
-            status = stash.wait_for_job(job_id)
-            print(f"Stash scan job {job_id}: {status}")
-
-        if images:
-            image_map = wait_for_paths(lambda: stash.get_image_file_map(root), {f.path for f in images}, "Images")
-            for file in images:
-                image_id = image_map.get(file.path)
-                if not image_id:
-                    missing += 1
-                    print(f"Image not found in Stash: {file.path}")
-                    continue
-                file.image_id = int(image_id)
-                file.stash_imported = True
-                linked_images += 1
-
-        if videos:
-            scene_map = wait_for_paths(lambda: stash.get_scene_file_map(root), {f.path for f in videos}, "Scenes")
-            for file in videos:
-                scene_id = scene_map.get(file.path)
-                if not scene_id:
-                    missing += 1
-                    print(f"Scene not found in Stash: {file.path}")
-                    continue
-                file.scene_id = int(scene_id)
-                file.stash_imported = True
-                generate_ids.append(scene_id)
-                linked_scenes += 1
-
-        db.commit()
+        result = import_files(stash, db, files, [root], root)
 
     except Exception:
         db.rollback()
@@ -105,9 +121,13 @@ def run(config):
     finally:
         db.close()
 
+    generate_ids = result.pop("generate_ids")
     if generate_ids:
         job_id = stash.generate_scene_media(generate_ids)
         print(f"Started cover/preview generation for {len(set(generate_ids))} scenes (job {job_id})")
 
-    print(f"Scenes linked: {linked_scenes}, images linked: {linked_images}, not found: {missing}, ignored: {ignored}")
-    return {"scenes_linked": linked_scenes, "images_linked": linked_images, "import_missing": missing}
+    print(
+        f"Scenes linked: {result['scenes_linked']}, images linked: {result['images_linked']}, "
+        f"not found: {result['import_missing']}, ignored: {result.pop('ignored')}"
+    )
+    return result

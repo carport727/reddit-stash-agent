@@ -175,7 +175,45 @@ def follow_sync(agent):
     return status
 
 
-def run_mode(mode, agent, settings, as_task=False):
+def follow_download(agent, job):
+    """Poll a post download until it ends, copying its log and progress to Stash. Returns the job."""
+    logged = 0
+    last_step = None
+
+    while True:
+        lines = job.get("log") or []
+        for line in lines[logged:]:
+            log_info(line)
+        logged = len(lines)
+
+        step = job.get("step")
+        if step and step != last_step:
+            last_step = step
+            log_info(f"Step {step}/{job.get('step_count')}: {job.get('step_label')}")
+        log_progress(job.get("progress") or 0)
+
+        if job.get("status") not in ("queued", "running"):
+            break
+
+        time.sleep(POLL_SECONDS)
+        try:
+            job = agent.request(f"/api/download/{job['id']}")
+        except AgentError as exc:
+            log_warning(f"Status poll failed, retrying: {exc}")
+
+    if job.get("status") != "success":
+        raise RuntimeError(f"Download failed ({job.get('error_code') or job.get('status')}): {job.get('error')}")
+
+    result = job.get("result") or {}
+    log_progress(1)
+    log_info(
+        f"Download finished: scenes {result.get('scene_ids')}, images {len(result.get('image_ids') or [])}, "
+        f"gallery {result.get('gallery_id')}" + (" (already downloaded)" if result.get("already_downloaded") else "")
+    )
+    return job
+
+
+def run_mode(mode, agent, settings, as_task=False, args=None):
     """as_task: started from the Stash task queue. Only then write results to the Stash log,
     so UI and Stashfeed polling via runPluginOperation do not flood it."""
     if mode == "health":
@@ -229,6 +267,24 @@ def run_mode(mode, agent, settings, as_task=False):
             log_info("\n".join(result.get("lines") or ["(no log)"]))
         return result
 
+    if mode == "download_post":
+        # args: url, optional wait (default true). Without waiting the queued job is returned.
+        args = args or {}
+        url = str(args.get("url") or "").strip()
+        if not url:
+            raise RuntimeError("download_post needs the argument url")
+        job = agent.request("/api/download", method="POST", body={"url": url})
+        log_info(f"Reddit post download queued: {url}")
+        if str(args.get("wait", True)).lower() in ("false", "0", "no"):
+            return job
+        return follow_download(agent, job)
+
+    if mode == "download_status":
+        job_id = str((args or {}).get("id") or "").strip()
+        if not job_id:
+            return agent.request("/api/downloads")
+        return agent.request(f"/api/download/{job_id}")
+
     raise RuntimeError(f"Unknown mode: {mode}")
 
 
@@ -239,7 +295,7 @@ def main():
     mode = sys.argv[1] if as_task else args.get("mode") or "health"
 
     settings = get_settings(plugin_input)
-    result = run_mode(mode, Agent(settings), settings, as_task)
+    result = run_mode(mode, Agent(settings), settings, as_task, args)
     print(json.dumps({"output": result}))
 
 

@@ -60,3 +60,22 @@ def test_compute_next_run():
     assert server.compute_next_run(interval, None, now) == now + server.FIRST_RUN_DELAY
     assert server.compute_next_run(interval, now - timedelta(hours=1), now) == now + timedelta(hours=5)
     assert server.compute_next_run(interval, now - timedelta(days=2), now) == now + server.OVERDUE_RUN_DELAY
+
+
+def test_download_requires_token_and_valid_link(client):
+    assert client.post("/api/download", json={"url": "https://redd.it/abc"}).status_code == 401
+    response = client.post("/api/download", json={"url": "https://example.com/x"}, headers=AUTH)
+    assert response.status_code == 400
+    assert "Not a Reddit post link" in response.json()["detail"]
+
+
+def test_download_queues_job(client, monkeypatch):
+    job = {"id": "j1", "url": "https://redd.it/abc", "status": "queued"}
+    monkeypatch.setattr(server.post_downloads, "submit", lambda config, url: job)
+    monkeypatch.setattr(server.post_downloads, "get_job", lambda job_id: job if job_id == "j1" else None)
+
+    response = client.post("/api/download", json={"url": "https://redd.it/abc"}, headers=AUTH)
+    assert response.status_code == 202
+    assert response.json()["id"] == "j1"
+    assert client.get("/api/download/j1", headers=AUTH).json()["status"] == "queued"
+    assert client.get("/api/download/nope", headers=AUTH).status_code == 404

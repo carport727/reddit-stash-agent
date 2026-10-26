@@ -72,9 +72,11 @@ class StashClient:
     # Scans and jobs
 
     def scan_path(self, path):
+        """Start a scan of one path or a list of paths. Returns the job ID."""
+        paths = [path] if isinstance(path, str) else list(path)
         data = self.query(
             "mutation($input: ScanMetadataInput!) { metadataScan(input: $input) }",
-            {"input": {"paths": [path]}},
+            {"input": {"paths": paths}},
         )
         return data["metadataScan"]
 
@@ -180,6 +182,22 @@ class StashClient:
             for url in gallery.get("urls") or []:
                 result.setdefault(url, gallery)
         return result
+
+    def find_gallery_by_url(self, url):
+        data = self.query(
+            """
+            query($url: String!) {
+              findGalleries(
+                gallery_filter: { url: { value: $url, modifier: INCLUDES } }
+                filter: { per_page: -1 }
+              ) {
+                galleries { id title urls performers { id } }
+              }
+            }
+            """,
+            {"url": url},
+        )
+        return next((g for g in data["findGalleries"]["galleries"] if url in (g.get("urls") or [])), None)
 
     def create_gallery(self, title, url):
         data = self.query(
