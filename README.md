@@ -34,23 +34,28 @@ Every step is idempotent: running a sync again only does what is still missing.
 
 ## Install the agent
 
-You need Docker with Compose v2, and a folder that is inside a Stash library and is mounted at the **same path** in
-Stash and in the agent (the agent asks Stash to scan it).
+You need Docker with Compose v2, and a folder inside a Stash library for the downloads.
 
 ```bash
-mkdir reddit-stash-agent && cd reddit-stash-agent
+mkdir -p reddit-stash-agent/config && cd reddit-stash-agent
 curl -fLO https://raw.githubusercontent.com/carport727/reddit-stash-agent/main/docker-compose.yml
-curl -fL https://raw.githubusercontent.com/carport727/reddit-stash-agent/main/.env.example -o .env
-mkdir -p config
-curl -fL https://raw.githubusercontent.com/carport727/reddit-stash-agent/main/config/config.example.yaml -o config/config.yaml
 ```
 
-1. In `.env`, set `STASH_API_KEY` (Stash → Settings → Security → API Key) and `AGENT_TOKEN`
-   (any long random string, e.g. `openssl rand -hex 32`).
-2. In `config/config.yaml`, set `stash.url` (how the container reaches Stash) and `downloads.root`.
-3. In `docker-compose.yml`, adjust the `/Stash:/Stash` volume to your library path.
-4. Optional, for NSFW or private feeds: export your Reddit cookies as JSON (a list of `{name, value}`) to
-   `config/reddit-cookies.json`.
+Open `docker-compose.yml` and fill in the values marked **Required**:
+
+| Setting | |
+|---|---|
+| `STASH_URL` | how the container reaches Stash, e.g. `http://192.168.1.10:9999` |
+| `STASH_API_KEY` | Stash → Settings → Security → API Key |
+| `AGENT_TOKEN` | any long random string (`openssl rand -hex 32`); the same value goes into the plugin settings |
+| `STASH_LIBRARY_HOST` / `STASH_LIBRARY_PATH` | your library folder on this host, and the path under which Stash sees it |
+| `DOWNLOADS_ROOT` | download folder below `STASH_LIBRARY_PATH`, e.g. `/Stash/Download/Reddit` |
+
+Write each value after the `:-`, e.g. `STASH_URL: ${STASH_URL:-http://192.168.1.10:9999}`. Alternatively put them
+into a `.env` file next to the compose file (template: [`.env.example`](.env.example)), which keeps secrets out of it.
+
+Put your Reddit cookies into `config/reddit-cookies.json` (see [Reddit login](#reddit-login)); without them Reddit
+blocks the downloads. Then:
 
 ```bash
 docker compose up -d
@@ -58,6 +63,9 @@ docker compose run --rm reddit-stash-agent doctor
 ```
 
 `doctor` checks the Stash connection and API key, the download folder, gallery-dl, the Reddit cookies and the token.
+
+Further settings (RSS delay, retry limit, dry run) can go into `config/config.yaml`; see
+[`config/config.example.yaml`](config/config.example.yaml). Environment variables take precedence over that file.
 
 ### Reddit login
 

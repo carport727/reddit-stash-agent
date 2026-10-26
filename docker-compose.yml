@@ -1,19 +1,33 @@
+# Reddit Stash Agent: copy this file into an empty folder, fill in the values marked "required",
+# then run: docker compose up -d && docker compose run --rm reddit-stash-agent doctor
+#
+# Values can be written here (replace the text after ":-") or put into a .env file next to this file
+# (e.g. STASH_API_KEY=...), which keeps secrets out of the compose file.
+# Optional extra settings: config/config.yaml (see config/config.example.yaml in the repository).
+
 services:
   reddit-stash-agent:
     image: ghcr.io/carport727/reddit-stash-agent:latest
-    # To build from source instead: comment out "image" and use
-    # build: .
     container_name: reddit-stash-agent
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
+    environment:
+      # Required: how this container reaches Stash, e.g. http://192.168.1.10:9999
+      STASH_URL: ${STASH_URL:-}
+      # Required: Stash > Settings > Security > API Key
+      STASH_API_KEY: ${STASH_API_KEY:-}
+      # Required: any long random string (openssl rand -hex 32). Enter the same value in the
+      # Stash plugin setting "Agent API token".
+      AGENT_TOKEN: ${AGENT_TOKEN:-}
+      # Folder inside a Stash library where downloads go; same path as Stash sees it.
+      DOWNLOADS_ROOT: ${DOWNLOADS_ROOT:-/Stash/Download/Reddit}
     ports:
-      # Stash must reach this port. Restrict to one interface if possible, e.g. "192.168.1.10:8787:8787".
-      - "8787:8787"
+      # Stash must reach this port.
+      - "${AGENT_PORT:-8787}:8787"
     volumes:
+      # Reddit cookies go here as config/reddit-cookies.json (see README "Reddit login").
       - ./config:/config
       - ./data:/data
       - ./logs:/logs
-      # Must be the same path Stash sees, because the agent asks Stash to scan it.
-      - /Stash:/Stash
+      # Required: your Stash library. Left: folder on this host. Right: the path under which Stash
+      # sees that folder (Settings > Library). DOWNLOADS_ROOT must lie below the right-hand path.
+      - ${STASH_LIBRARY_HOST:-/Stash}:${STASH_LIBRARY_PATH:-/Stash}
