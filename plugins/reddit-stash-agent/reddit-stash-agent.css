@@ -34,3 +34,8 @@
   font-size: 0.8rem;
   white-space: pre-wrap;
 }
+
+.reddit-stash-agent-cookies textarea {
+  font-family: monospace;
+  font-size: 0.8rem;
+}

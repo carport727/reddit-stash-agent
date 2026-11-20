@@ -106,3 +106,18 @@ def test_download_post_reports_error_code():
 def test_download_post_needs_url():
     with pytest.raises(RuntimeError, match="url"):
         plugin.run_mode("download_post", FakeAgent([{}]), {}, args={})
+
+
+def test_set_cookies_mode():
+    class CookieAgent(FakeAgent):
+        def request(self, path, method="GET", body=None, timeout=20):
+            self.calls.append((method, path, body))
+            return {"present": True, "expires_at": "2027-01-21T00:00:00+00:00"}
+
+    agent = CookieAgent([{}])
+    result = plugin.run_mode("set_cookies", agent, {}, args={"cookies": "[...]"})
+    assert result["present"] is True
+    assert agent.calls == [("PUT", "/api/cookies", {"cookies": "[...]"})]
+
+    with pytest.raises(RuntimeError, match="cookies"):
+        plugin.run_mode("set_cookies", agent, {}, args={})

@@ -88,3 +88,41 @@ def test_login_cookie_status(tmp_path):
     path.write_text(json.dumps([{"name": "other", "value": "x"}]))
     assert not login_cookie_status(str(path))["present"]
     assert not login_cookie_status(str(tmp_path / "missing.json"))["present"]
+
+
+def test_parse_cookie_export_json_and_netscape(tmp_path):
+    import json
+
+    import pytest
+
+    from app.providers.reddit.rss import CookieError, login_cookie_status, parse_cookie_export, save_cookies
+
+    now = 1_800_000_000
+    export = [
+        {"domain": ".reddit.com", "name": "reddit_session", "value": "abc", "expirationDate": now + 86400.5},
+        {"domain": "www.reddit.com", "name": "csrf_token", "value": "x", "session": True},
+        {"domain": ".google.com", "name": "NID", "value": "secret"},
+    ]
+    cookies = parse_cookie_export(json.dumps(export), now=now)
+    assert [c["name"] for c in cookies] == ["reddit_session", "csrf_token"]
+
+    target = tmp_path / "config" / "reddit-cookies.json"
+    save_cookies(cookies, str(target))
+    assert (target.stat().st_mode & 0o777) == 0o600
+    assert login_cookie_status(str(target), now=now)["days_left"] == 1
+
+    expires = now + 10
+    netscape = f"# Netscape HTTP Cookie File\n#HttpOnly_.reddit.com\tTRUE\t/\tTRUE\t{expires}\treddit_session\tabc\n"
+    assert parse_cookie_export(netscape, now=now)[0]["value"] == "abc"
+    txt = tmp_path / "c.txt"
+    save_cookies(parse_cookie_export(netscape, now=now), str(txt))
+    assert parse_cookie_export(txt.read_text(), now=now)[0]["name"] == "reddit_session"
+
+    with pytest.raises(CookieError, match="No reddit_session"):
+        parse_cookie_export(json.dumps(export[1:]), now=now)
+    with pytest.raises(CookieError, match="expired"):
+        parse_cookie_export(json.dumps(export), now=now + 2 * 86400)
+    with pytest.raises(CookieError):
+        parse_cookie_export("not cookies", now=now)
+    with pytest.raises(CookieError):
+        parse_cookie_export("", now=now)

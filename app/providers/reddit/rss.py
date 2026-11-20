@@ -123,6 +123,107 @@ def gallery_dl_cookie_file(source, target):
     return target
 
 
+class CookieError(ValueError):
+    pass
+
+
+def parse_cookie_export(text, now=None):
+    """Reddit cookies from a browser export: Cookie-Editor JSON (list of objects) or Netscape cookies.txt.
+
+    Returns normalized dicts {name, value, domain, path, secure, expirationDate}, reddit.com only.
+    Raises CookieError when the export is unusable (no login cookie, or it already expired).
+    """
+    text = (text or "").strip()
+    if not text:
+        raise CookieError("No cookies given")
+
+    cookies = []
+    if text.startswith("[") or text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except ValueError as exc:
+            raise CookieError(f"Not valid JSON: {exc}") from None
+        if isinstance(data, dict):
+            data = data.get("cookies") or [data]
+        for item in data:
+            if not isinstance(item, dict) or "name" not in item or "value" not in item:
+                raise CookieError("JSON export must be a list of cookies with name and value")
+            cookies.append(
+                {
+                    "name": str(item["name"]),
+                    "value": str(item["value"]),
+                    "domain": str(item.get("domain") or ".reddit.com"),
+                    "path": str(item.get("path") or "/"),
+                    "secure": bool(item.get("secure", True)),
+                    "expirationDate": int(float(item.get("expirationDate") or item.get("expires") or 0)),
+                }
+            )
+    else:
+        for line in text.splitlines():
+            if line.startswith("#HttpOnly_"):
+                line = line[len("#HttpOnly_") :]
+            if not line.strip() or line.startswith("#"):
+                continue
+            fields = line.strip("\r").split("\t")
+            if len(fields) != 7:
+                raise CookieError("Not a Netscape cookies.txt (expected 7 tab-separated fields per line)")
+            cookies.append(
+                {
+                    "name": fields[5],
+                    "value": fields[6],
+                    "domain": fields[0],
+                    "path": fields[2] or "/",
+                    "secure": fields[3].upper() == "TRUE",
+                    "expirationDate": int(fields[4]) if fields[4].isdigit() else 0,
+                }
+            )
+
+    cookies = [c for c in cookies if "reddit.com" in c["domain"]]
+    login = next((c for c in cookies if c["name"] == LOGIN_COOKIE), None)
+    if login is None:
+        raise CookieError(f"No {LOGIN_COOKIE} cookie for reddit.com; export while logged in to reddit.com")
+    if login["expirationDate"] and login["expirationDate"] <= (now or time.time()):
+        raise CookieError(f"The {LOGIN_COOKIE} cookie has already expired; log in again and export fresh cookies")
+    return cookies
+
+
+def save_cookies(cookies, path):
+    """Write cookies (from parse_cookie_export) to path: JSON for *.json, otherwise Netscape. Mode 600."""
+    if path.endswith(".json"):
+        content = json.dumps(cookies, indent=2) + "\n"
+    else:
+        lines = ["# Netscape HTTP Cookie File"]
+        for c in cookies:
+            lines.append(
+                "\t".join(
+                    [
+                        c["domain"],
+                        "TRUE" if c["domain"].startswith(".") else "FALSE",
+                        c["path"],
+                        "TRUE" if c["secure"] else "FALSE",
+                        str(c["expirationDate"]),
+                        c["name"],
+                        c["value"],
+                    ]
+                )
+            )
+        content = "\n".join(lines) + "\n"
+
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    temp_file = f"{path}.{os.getpid()}.tmp"
+    fd = os.open(temp_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(content)
+    # Keep the file owned like its folder, so the host user can still read it (the container runs as root).
+    try:
+        st = os.stat(directory)
+        os.chown(temp_file, st.st_uid, st.st_gid)
+    except OSError:
+        pass
+    os.replace(temp_file, path)
+
+
 def get_rss_url(source_type, source_name):
     if source_type == "user":
         return f"https://www.reddit.com/user/{source_name}/.rss"

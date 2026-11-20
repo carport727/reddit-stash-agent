@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, st
 from pydantic import BaseModel, Field
 
 from app import __version__
-from app.providers.reddit.rss import login_cookie_status
+from app.providers.reddit.rss import CookieError, login_cookie_status, parse_cookie_export, save_cookies
 from app.reddit.parser import parse_post_url
 from app.runtime import post_downloads, runner
 from app.runtime.sync_state import read_status
@@ -34,6 +34,11 @@ DOWNLOAD_WAIT_SECONDS = 30 * 60
 class SchedulerConfig(BaseModel):
     enabled: bool = False
     interval_hours: float = Field(default=6, gt=0)
+
+
+class CookiesRequest(BaseModel):
+    # Cookie-Editor JSON export or Netscape cookies.txt, as pasted.
+    cookies: str = Field(max_length=200_000)
 
 
 class DownloadRequest(BaseModel):
@@ -233,3 +238,17 @@ def get_download(job_id: str):
 @app.get("/api/downloads", dependencies=api)
 def list_downloads(limit: int = Query(default=20, ge=1, le=post_downloads.KEEP_JOBS)):
     return {"downloads": post_downloads.list_jobs(limit)}
+
+
+@app.put("/api/cookies", dependencies=api)
+def update_cookies(request: CookiesRequest):
+    """Replace the Reddit login cookies used for RSS and downloads."""
+    try:
+        cookies = parse_cookie_export(request.cookies)
+    except CookieError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    path = config["reddit"]["cookies"]
+    save_cookies(cookies, path)
+    print(f"Reddit cookies updated ({len(cookies)} cookies)", flush=True)
+    return login_cookie_status(path)

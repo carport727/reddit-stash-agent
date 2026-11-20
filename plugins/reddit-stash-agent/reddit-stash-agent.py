@@ -279,6 +279,15 @@ def run_mode(mode, agent, settings, as_task=False, args=None):
             return job
         return follow_download(agent, job)
 
+    if mode == "set_cookies":
+        # args: cookies (Cookie-Editor JSON export or Netscape cookies.txt). Never logged.
+        cookies = str((args or {}).get("cookies") or "")
+        if not cookies.strip():
+            raise RuntimeError("set_cookies needs the argument cookies")
+        result = agent.request("/api/cookies", method="PUT", body={"cookies": cookies})
+        log_info(f"Reddit cookies updated, valid until {result.get('expires_at') or 'end of session'}")
+        return result
+
     if mode == "download_status":
         job_id = str((args or {}).get("id") or "").strip()
         if not job_id:

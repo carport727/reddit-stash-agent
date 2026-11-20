@@ -73,10 +73,15 @@ Reddit blocks anonymous downloads ("You've been blocked by network security" or 
 therefore uses the cookies of a logged-in Reddit session for RSS and gallery-dl, and lets gallery-dl imitate Firefox
 (`downloads.gallery_dl_browser`).
 
-1. Log in to reddit.com in your browser and export the cookies with an extension such as Cookie-Editor:
-   either as **JSON** to `config/reddit-cookies.json`, or as **Netscape** to `config/reddit-cookies.txt`
-   (then set `reddit.cookies: /config/reddit-cookies.txt`).
-2. Check it: `docker compose run --rm reddit-stash-agent test_gallerydl https://www.reddit.com/r/pics/`
+1. Log in to reddit.com in your browser and export the cookies with an extension such as Cookie-Editor
+   (Export → JSON or Netscape).
+2. Hand them to the agent, either way:
+   - **In Stash:** Reddit Agent page → **Update cookies** → paste the export → **Save cookies**. The agent checks the
+     export (a `reddit_session` cookie that has not expired), keeps only the reddit.com cookies and stores them in its
+     own `config` folder. They are not stored in Stash.
+   - **As a file:** save the JSON export as `config/reddit-cookies.json`, or a Netscape export as
+     `config/reddit-cookies.txt` (then set `reddit.cookies: /config/reddit-cookies.txt`).
+3. Check it: `docker compose run --rm reddit-stash-agent test_gallerydl https://www.reddit.com/r/pics/`
 
 The `reddit_session` cookie stays valid for months. The plugin page shows its expiry date (yellow two weeks before,
 red when expired). When downloads get blocked again, export fresh cookies.
@@ -163,6 +168,7 @@ They are safe to poll; `status` is read-only.
 | `logs` | `{log_file, lines: [...]}` (last 200 lines of the current or last run) |
 | `sync` | like the task: starts and blocks until the sync ends. Prefer `start` + polling `status` in clients. |
 | `download_post` | args `{url, wait}`: downloads one post. Blocks until done and returns the finished job (see below); with `wait: false` it returns the queued job at once. Fails with `Download failed (<error_code>): …` |
+| `set_cookies` | args `{cookies}`: replace the Reddit cookies (Cookie-Editor JSON or Netscape text); returns the cookie status. Error if there is no valid `reddit_session` cookie. |
 | `download_status` | args `{id}`: one download job; without `id` the last 20 (`{downloads: [...]}`) |
 
 `status`:
@@ -256,6 +262,7 @@ Everything except `/api/health` needs `Authorization: Bearer <AGENT_TOKEN>` when
 | POST | `/api/sync` | start a sync (202; 409 if one is running) |
 | POST | `/api/sync/cancel` | cancel it (202; 409 if none) |
 | GET | `/api/logs?lines=200` | tail of the current or last run log |
+| PUT | `/api/cookies` | replace the Reddit cookies, body `{cookies: "<export>"}` (400 if unusable) |
 | POST | `/api/download` | download one post, body `{"url": "…", "wait": false}`. 202 with the queued job; with `wait: true` it blocks until the job ends (200, max. 30 min). 400 for a link that is not a Reddit post. |
 | GET | `/api/download/{id}` | one download job (404 if unknown) |
 | GET | `/api/downloads?limit=20` | the last download jobs, newest first |

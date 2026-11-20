@@ -86,10 +86,14 @@
     const [error, setError] = React.useState(null);
     const [busy, setBusy] = React.useState(false);
     const [logLines, setLogLines] = React.useState(null);
+    // null = editor closed, otherwise the pasted cookie export
+    const [cookieText, setCookieText] = React.useState(null);
+    const [cookieMessage, setCookieMessage] = React.useState(null);
 
     const call = React.useCallback(
-      async function (mode) {
-        const result = await runOperation({ variables: { pluginId: PLUGIN_ID, args: { mode: mode } } });
+      async function (mode, extraArgs) {
+        const args = Object.assign({ mode: mode }, extraArgs || {});
+        const result = await runOperation({ variables: { pluginId: PLUGIN_ID, args: args } });
         return result.data ? result.data.runPluginOperation : null;
       },
       [runOperation]
@@ -115,6 +119,24 @@
         setError(null);
       } catch (err) {
         setError(errorMessage(err));
+      }
+      await refresh();
+      setBusy(false);
+    }
+
+    async function saveCookies() {
+      setBusy(true);
+      setCookieMessage(null);
+      try {
+        const result = await call("set_cookies", { cookies: cookieText });
+        setCookieText(null);
+        setCookieMessage(
+          "Cookies saved" + (result && result.expires_at ? ", valid until " + formatDate(result.expires_at) : "") + "."
+        );
+        setError(null);
+      } catch (err) {
+        setCookieMessage(null);
+        setError("Cookies not saved: " + errorMessage(err));
       }
       await refresh();
       setBusy(false);
@@ -198,7 +220,50 @@
               h(Row, { label: "Automatic sync" }, scheduler.enabled ? "every " + scheduler.interval_hours + " h" : "off"),
               h(Row, { label: "Next run" }, formatDate(scheduler.next_run_at)),
               h("hr"),
-              h(Row, { label: "Reddit cookies" }, cookieInfo(status.reddit_cookies, summary))
+              h(Row, { label: "Reddit cookies" }, cookieInfo(status.reddit_cookies, summary)),
+              cookieText === null
+                ? h(
+                    "div",
+                    { className: "mt-2" },
+                    h(
+                      Button,
+                      { variant: "secondary", size: "sm", disabled: busy, onClick: () => setCookieText("") },
+                      "Update cookies"
+                    ),
+                    cookieMessage && h("span", { className: "text-success ml-2" }, cookieMessage)
+                  )
+                : h(
+                    "div",
+                    { className: "reddit-stash-agent-cookies mt-2" },
+                    h(
+                      "p",
+                      { className: "text-muted mb-2" },
+                      "Log in on reddit.com in your browser, open the Cookie-Editor extension there, choose Export \u2192 JSON " +
+                        "(or Netscape) and paste the result here. Only the reddit.com cookies are stored, on the agent."
+                    ),
+                    h("textarea", {
+                      className: "form-control text-input",
+                      rows: 6,
+                      spellCheck: false,
+                      placeholder: '[{"domain": ".reddit.com", "name": "reddit_session", "value": "...", ...}]',
+                      value: cookieText,
+                      onChange: (event) => setCookieText(event.target.value),
+                    }),
+                    h(
+                      "div",
+                      { className: "mt-2" },
+                      h(
+                        Button,
+                        { variant: "primary", size: "sm", disabled: busy || !cookieText.trim(), onClick: saveCookies },
+                        "Save cookies"
+                      ),
+                      h(
+                        Button,
+                        { variant: "secondary", size: "sm", className: "ml-2", disabled: busy, onClick: () => setCookieText(null) },
+                        "Cancel"
+                      )
+                    )
+                  )
             ),
           error && h("div", { className: "text-danger mt-3" }, error)
         )

@@ -79,3 +79,24 @@ def test_download_queues_job(client, monkeypatch):
     assert response.json()["id"] == "j1"
     assert client.get("/api/download/j1", headers=AUTH).json()["status"] == "queued"
     assert client.get("/api/download/nope", headers=AUTH).status_code == 404
+
+
+def test_update_cookies(client, tmp_path, monkeypatch):
+    import json
+    import time
+
+    path = tmp_path / "reddit-cookies.json"
+    monkeypatch.setitem(server.config["reddit"], "cookies", str(path))
+    export = [
+        {"domain": ".reddit.com", "name": "reddit_session", "value": "abc", "expirationDate": time.time() + 3 * 86400}
+    ]
+
+    assert client.put("/api/cookies", json={"cookies": json.dumps(export)}).status_code == 401
+    response = client.put("/api/cookies", json={"cookies": json.dumps(export)}, headers=AUTH)
+    assert response.status_code == 200
+    assert response.json()["present"] is True
+    assert json.loads(path.read_text())[0]["value"] == "abc"
+
+    bad = client.put("/api/cookies", json={"cookies": "[]"}, headers=AUTH)
+    assert bad.status_code == 400
+    assert "reddit_session" in bad.json()["detail"]
