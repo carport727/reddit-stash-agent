@@ -100,3 +100,56 @@ def test_update_cookies(client, tmp_path, monkeypatch):
     bad = client.put("/api/cookies", json={"cookies": "[]"}, headers=AUTH)
     assert bad.status_code == 400
     assert "reddit_session" in bad.json()["detail"]
+
+
+def test_post_lookup_and_batch_download(client, tmp_path, monkeypatch):
+    from app.database.database import SessionLocal
+    from app.database.models import RedditPost
+
+    monkeypatch.setitem(server.config["database"], "path", str(tmp_path / "agent.db"))
+    monkeypatch.setattr(server.post_downloads, "_db_ready", False)
+    monkeypatch.setattr(server.post_downloads, "_read_jobs", lambda: [])
+    submitted = []
+    monkeypatch.setattr(
+        server.post_downloads,
+        "submit",
+        lambda config, url: submitted.append(url) or {"id": f"job{len(submitted)}", "status": "queued"},
+    )
+
+    server.post_downloads.ensure_db(server.config)
+    db = SessionLocal()
+    db.add(RedditPost(reddit_id="t3_aaa", url="https://www.reddit.com/comments/aaa/", downloaded=True))
+    db.add(RedditPost(reddit_id="t3_ccc", url="https://www.reddit.com/comments/ccc/", downloaded=False))
+    db.commit()
+    db.close()
+
+    urls = [
+        "https://www.reddit.com/r/x/comments/aaa/title/",
+        "https://www.reddit.com/r/x/comments/bbb/title/",
+        "https://www.reddit.com/r/x/comments/ccc/title/",
+        "https://www.reddit.com/r/x/s/ShareCode1",
+        "https://example.com/nope",
+    ]
+    assert client.post("/api/posts/lookup", json={"urls": urls}).status_code == 401
+
+    lookup = client.post("/api/posts/lookup", json={"urls": urls}, headers=AUTH).json()["posts"]
+    assert [p["status"] for p in lookup] == ["downloaded", "new", "new", "unknown", "invalid"]
+    assert submitted == []
+
+    response = client.post("/api/posts/download", json={"urls": urls}, headers=AUTH)
+    assert response.status_code == 202
+    body = response.json()
+    assert submitted == urls[1:4]
+    assert body["counts"] == {"downloaded": 1, "queued": 3, "invalid": 1}
+
+    assert client.post("/api/posts/lookup", json={"urls": []}, headers=AUTH).status_code == 422
+
+
+def test_userscript_is_served_prefilled(client):
+    response = client.get("/reddit-stash-agent.user.js")
+    assert response.status_code == 200
+    script = response.text
+    assert "// ==UserScript==" in script
+    assert "__AGENT_URL__" not in script and "__VERSION__" not in script
+    assert 'const DEFAULT_AGENT_URL = "http://testserver";' in script
+    assert "test-token" not in script

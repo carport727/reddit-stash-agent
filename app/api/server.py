@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from app import __version__
@@ -39,6 +39,11 @@ class SchedulerConfig(BaseModel):
 class CookiesRequest(BaseModel):
     # Cookie-Editor JSON export or Netscape cookies.txt, as pasted.
     cookies: str = Field(max_length=200_000)
+
+
+class PostListRequest(BaseModel):
+    # Post links as seen in the browser (userscript) or shared from the phone.
+    urls: list[str] = Field(min_length=1, max_length=200)
 
 
 class DownloadRequest(BaseModel):
@@ -252,3 +257,36 @@ def update_cookies(request: CookiesRequest):
     save_cookies(cookies, path)
     print(f"Reddit cookies updated ({len(cookies)} cookies)", flush=True)
     return login_cookie_status(path)
+
+
+@app.post("/api/posts/lookup", dependencies=api)
+def lookup_posts(request: PostListRequest):
+    """Which of these posts the agent already has: downloaded | queued | new | unknown | invalid."""
+    return {"posts": post_downloads.lookup(config, request.urls)}
+
+
+@app.post("/api/posts/download", status_code=status.HTTP_202_ACCEPTED, dependencies=api)
+def download_posts(request: PostListRequest):
+    """Queue all posts the agent does not have yet (one download job each, run one after another)."""
+    posts = post_downloads.submit_many(config, request.urls)
+    counts = {}
+    for post in posts:
+        counts[post["status"]] = counts.get(post["status"], 0) + 1
+    return {"posts": posts, "counts": counts}
+
+
+USERSCRIPT_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "userscript", "reddit-stash-agent.user.js")
+
+
+@app.get("/reddit-stash-agent.user.js")
+def userscript(request: Request):
+    """Browser userscript (Tampermonkey/Violentmonkey), pre-filled with this agent's address. Holds no secrets."""
+    base = str(request.base_url).rstrip("/")
+    with open(USERSCRIPT_FILE) as f:
+        script = f.read()
+    script = (
+        script.replace("__AGENT_URL__", base)
+        .replace("__AGENT_HOST__", request.url.hostname or "localhost")
+        .replace("__VERSION__", __version__)
+    )
+    return Response(script, media_type="application/javascript; charset=utf-8")

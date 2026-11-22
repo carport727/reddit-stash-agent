@@ -16,13 +16,18 @@ Stash UI / Stashfeed ──GraphQL──▶ Stash ──plugin──▶ Agent AP
 
 > **Alpha.** The database schema, commands and config can still change between minor versions.
 
+> **Reddit shut down its RSS feeds in November 2026.** The sync can no longer discover new posts by itself (step 2
+> reports every feed as failed). Send posts from your browser instead (see
+> [Send posts from the browser](#send-posts-from-the-browser)), share them from the phone through Stashfeed, or use
+> "Download Reddit Post" in Stash. Downloads, imports, galleries and performer links work as before.
+
 ## How a sync works
 
 A Reddit source is a Reddit URL on a Stash performer, e.g. `https://www.reddit.com/user/NAME` or
 `https://www.reddit.com/r/NAME`. Each sync runs these steps:
 
 1. **Sources** – read the Reddit URLs of all performers. Removing a URL in Stash stops that source.
-2. **RSS scan** – fetch the newest posts of each source.
+2. **RSS scan** – fetch the newest posts of each source. *Reddit no longer serves these feeds (since November 2026).*
 3. **Download** – download new posts with gallery-dl. A failing post is retried, up to `max_attempts` times.
 4. **Import** – start a Stash scan of the download folder, wait for it, and remember the new scene and image IDs.
    Covers and previews are generated for new scenes.
@@ -101,6 +106,22 @@ docker compose pull && docker compose up -d
 ```
 
 The database is migrated automatically on start.
+
+## Send posts from the browser
+
+A userscript adds a **→ Stash** button to every post on reddit.com (new and old layout) and a small panel with
+**Send N new**, which sends all posts on the page you are looking at that the agent does not have yet. Posts already
+downloaded show **✓ in Stash**. The script only reads the page you have open; it never loads Reddit pages by itself.
+The agent then downloads each post with your Reddit cookies, imports it into Stash and links the performer whose
+Reddit URL matches the author or subreddit, exactly like "Download Reddit Post".
+
+1. Install a userscript manager in your browser: [Violentmonkey](https://violentmonkey.github.io/) or
+   [Tampermonkey](https://www.tampermonkey.net/).
+2. Open `http://AGENT-HOST:8787/reddit-stash-agent.user.js` (your agent's address) and confirm the installation.
+   The script comes with that address filled in and updates itself from there.
+3. On reddit.com, open the userscript menu → **Reddit → Stash: settings** and enter the `AGENT_TOKEN`.
+
+Typical use: open a performer's Reddit profile or subreddit, sort by new, and click **Send N new**.
 
 ## Install the Stash plugin
 
@@ -266,6 +287,9 @@ Everything except `/api/health` needs `Authorization: Bearer <AGENT_TOKEN>` when
 | POST | `/api/download` | download one post, body `{"url": "…", "wait": false}`. 202 with the queued job; with `wait: true` it blocks until the job ends (200, max. 30 min). 400 for a link that is not a Reddit post. |
 | GET | `/api/download/{id}` | one download job (404 if unknown) |
 | GET | `/api/downloads?limit=20` | the last download jobs, newest first |
+| POST | `/api/posts/lookup` | body `{"urls": [...]}` (1–200 post links): state of each, `downloaded` / `queued` / `new` / `unknown` (share link) / `invalid` |
+| POST | `/api/posts/download` | body `{"urls": [...]}`: queue every post that is not downloaded or queued yet (one job each, run one after another); returns the states and `counts` |
+| GET | `/reddit-stash-agent.user.js` | the browser userscript, pre-filled with this agent's address (no token needed, holds no secrets) |
 
 ```bash
 curl -H "Authorization: Bearer $AGENT_TOKEN" -H "Content-Type: application/json" \

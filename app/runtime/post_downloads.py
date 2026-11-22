@@ -173,8 +173,76 @@ def wait(job_id, timeout):
     return get_job(job_id)
 
 
-def _run(config, job_id, url, runner):
+def ensure_db(config):
+    """Open the agent DB once per server process (the API itself does not otherwise need it)."""
     global _db_ready
+    with _lock:
+        if not _db_ready:
+            init_db(config["database"]["path"])
+            _db_ready = True
+
+
+def lookup(config, urls):
+    """State of each post link: downloaded | queued | new | unknown (share link) | invalid.
+
+    Used by the browser userscript to mark posts and to send only the ones the agent does not have.
+    """
+    from app.database.database import SessionLocal
+    from app.database.models import RedditPost
+    from app.reddit.parser import parse_post_url
+
+    ensure_db(config)
+
+    active = {}
+    for job in _read_jobs():
+        if job["status"] in ACTIVE:
+            try:
+                active[parse_post_url(job["url"])[0] or job["url"]] = job["id"]
+            except ValueError:
+                pass
+
+    parsed = []
+    for url in urls:
+        try:
+            reddit_id, _ = parse_post_url(url)
+        except ValueError as exc:
+            parsed.append({"url": url, "reddit_id": None, "status": "invalid", "error": str(exc)})
+            continue
+        parsed.append({"url": url, "reddit_id": reddit_id, "status": "new" if reddit_id else "unknown"})
+
+    ids = [p["reddit_id"] for p in parsed if p["reddit_id"]]
+    db = SessionLocal()
+    try:
+        downloaded = {
+            row.reddit_id
+            for row in db.query(RedditPost.reddit_id)
+            .filter(RedditPost.reddit_id.in_(ids), RedditPost.downloaded.is_(True))
+            .all()
+        }
+    finally:
+        db.close()
+
+    for post in parsed:
+        key = post["reddit_id"] or post["url"]
+        if post["reddit_id"] in downloaded:
+            post["status"] = "downloaded"
+        elif key in active:
+            post["status"] = "queued"
+            post["job_id"] = active[key]
+    return parsed
+
+
+def submit_many(config, urls):
+    """Queue every link the agent does not have yet. Returns lookup() results with job_id for queued ones."""
+    results = lookup(config, urls)
+    for post in results:
+        if post["status"] in ("new", "unknown"):
+            post["job_id"] = submit(config, post["url"])["id"]
+            post["status"] = "queued"
+    return results
+
+
+def _run(config, job_id, url, runner):
     from app.commands.download_post import PostDownloadError
 
     pending = [""]
@@ -195,9 +263,7 @@ def _run(config, job_id, url, runner):
         _update(job_id, step=index, step_label=label, progress=round((index - 1) / step_count, 3))
 
     try:
-        if not _db_ready:
-            init_db(config["database"]["path"])
-            _db_ready = True
+        ensure_db(config)
         print(f"Post download {job_id}: {url}", flush=True)
         result = runner(config, url, on_step=on_step)
         _update(job_id, status="success", result=result, progress=1.0, step_label=None, finished_at=utc_now())
