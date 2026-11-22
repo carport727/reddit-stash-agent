@@ -23,6 +23,8 @@ from app.stash.client import StashClient
 MESSAGE_URL = 3
 OLD_NAME = re.compile(r"^(?P<id>[a-z0-9]+) (?P<rest>.+)$", re.IGNORECASE)
 NUMBERED_NAME = re.compile(r"^[a-z0-9]+ \d{2,} ", re.IGNORECASE)
+# Rescan in Stash every this many posts, so renamed files do not show as missing for long.
+SCAN_EVERY = 100
 
 
 def gallery_positions(messages):
@@ -66,6 +68,12 @@ def run(config, dry_run=False, limit=None):
 
     checked = renamed = unmatched = failed = blocked = consecutive_blocks = 0
     folders = set()
+
+    def rescan():
+        if folders and not dry_run:
+            print(f"Rescanning {len(folders)} folders in Stash so it picks up the new file names")
+            print(f"Stash scan: {stash.wait_for_job(stash.scan_path(sorted(folders)))}")
+        folders.clear()
 
     try:
         files_by_post = {}
@@ -123,11 +131,10 @@ def run(config, dry_run=False, limit=None):
                 renamed += 1
             db.commit()
             print(f"[{index}/{len(todo)}] {post.reddit_id}: {len(positions)} items in order")
+            if index % SCAN_EVERY == 0:
+                rescan()
 
-        if folders and not dry_run:
-            print(f"Rescanning {len(folders)} folders in Stash so it picks up the new file names")
-            status = stash.wait_for_job(stash.scan_path(sorted(folders)))
-            print(f"Stash scan: {status}")
+        rescan()
 
         print(
             f"Done: {checked} galleries checked, {renamed} files {'to rename' if dry_run else 'renamed'}, "
