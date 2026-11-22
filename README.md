@@ -111,7 +111,7 @@ The database is migrated automatically on start.
 
 A userscript adds a **→ Stash** button to every post on reddit.com (new and old layout) and a small panel with
 **Send N new**, which sends all posts on the page you are looking at that the agent does not have yet. Posts already
-downloaded show **✓ in Stash**. The script only reads the page you have open; it never loads Reddit pages by itself.
+downloaded show **✓ in Stash**. The script only works on the page you have open; it never opens other Reddit pages by itself.
 The agent then downloads each post with your Reddit cookies, imports it into Stash and links the performer whose
 Reddit URL matches the author or subreddit, exactly like "Download Reddit Post".
 
@@ -122,6 +122,12 @@ Reddit URL matches the author or subreddit, exactly like "Download Reddit Post".
 3. On reddit.com, open the userscript menu → **Reddit → Stash: settings** and enter the `AGENT_TOKEN`.
 
 Typical use: open a performer's Reddit profile or subreddit, sort by new, and click **Send N new**.
+
+**Auto mode** (checkbox in the panel, or userscript menu → **Reddit → Stash: auto on/off**): when you open a
+profile or subreddit, the script switches it to **Hot** (unless you picked a sort yourself), scrolls down until
+about 30 posts are loaded (change the number in the settings), scrolls back up and sends the posts the agent does
+not have yet. Posts already in Stash are skipped. It works only on the page you opened and never opens other
+Reddit pages. On old.reddit.com it uses the posts of the current page (no endless scrolling there).
 
 ## Install the Stash plugin
 

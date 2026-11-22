@@ -17,7 +17,8 @@
 // @run-at       document-idle
 // ==/UserScript==
 
-// Only reads the page you have open; it never loads other Reddit pages by itself.
+// Only works on the page you have open. With "Auto" on, a profile or subreddit you open is switched to Hot,
+// scrolled down until about N posts are loaded, and the posts the agent does not have yet are sent.
 // The agent fetches each post you send with your Reddit login, like "Download Reddit Post" in Stash.
 
 (function () {
@@ -27,6 +28,11 @@
   const LOOKUP_BATCH = 200;
   const SCAN_DELAY_MS = 800;
   const REFRESH_QUEUED_MS = 15000;
+  const AUTO_START_DELAY_MS = 1500;
+  const AUTO_SCROLL_WAIT_MS = 1500;
+  const AUTO_MAX_IDLE_SCROLLS = 4;
+  const DEFAULT_AUTO_COUNT = 30;
+  const SORTS = ["hot", "new", "top", "rising", "controversial", "best"];
 
   // url -> { url, status, error, elements: [element], buttons: [button] } (a post can appear twice on a page)
   const posts = new Map();
@@ -39,18 +45,41 @@
     return String(GM_getValue("token", "") || "");
   }
 
+  function autoEnabled() {
+    return !!GM_getValue("auto", false);
+  }
+
+  function autoCount() {
+    const count = parseInt(GM_getValue("autoCount", DEFAULT_AUTO_COUNT), 10);
+    return count > 0 ? count : DEFAULT_AUTO_COUNT;
+  }
+
   function configure() {
     const url = prompt("Reddit Stash Agent URL", agentUrl());
     if (url === null) return false;
     const tok = prompt("Agent API token (AGENT_TOKEN, same as in the Stash plugin settings)", token());
     if (tok === null) return false;
+    const count = prompt("Auto: how many posts to load per page (Hot)", String(autoCount()));
+    if (count === null) return false;
     GM_setValue("agentUrl", url.trim());
     GM_setValue("token", tok.trim());
+    if (parseInt(count, 10) > 0) GM_setValue("autoCount", parseInt(count, 10));
+    updatePanel();
     scheduleScan(true);
     return true;
   }
 
+  function setAuto(enabled) {
+    GM_setValue("auto", !!enabled);
+    updatePanel();
+    if (enabled) startAuto();
+    else stopAuto();
+  }
+
   GM_registerMenuCommand("Reddit → Stash: settings", configure);
+  GM_registerMenuCommand("Reddit → Stash: auto on/off", function () {
+    setAuto(!autoEnabled());
+  });
 
   function api(method, path, body) {
     return new Promise(function (resolve, reject) {
@@ -115,7 +144,7 @@
   function makeButton(post) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "rsa-button";
+    button.className = "rsa-button rsa-post-button";
     button.addEventListener("click", function (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -135,7 +164,18 @@
     updatePanel();
   }
 
-  async function lookup(urls) {
+  const pendingLookups = new Set();
+
+  function lookup(urls) {
+    const promise = lookupNow(urls);
+    pendingLookups.add(promise);
+    promise.finally(function () {
+      pendingLookups.delete(promise);
+    });
+    return promise;
+  }
+
+  async function lookupNow(urls) {
     for (let i = 0; i < urls.length; i += LOOKUP_BATCH) {
       try {
         const data = await api("POST", "/api/posts/lookup", { urls: urls.slice(i, i + LOOKUP_BATCH) });
@@ -148,8 +188,8 @@
     }
   }
 
-  async function send(urls) {
-    if (!token() && !configure()) return;
+  async function send(urls, quiet) {
+    if (!token() && (quiet || !configure())) return null;
     urls.forEach(function (url) {
       const post = posts.get(url);
       if (post) {
@@ -165,6 +205,7 @@
         (counts.queued || 0) + " sent to Stash" + (counts.downloaded ? ", " + counts.downloaded + " already there" : ""),
         false
       );
+      return counts;
     } catch (err) {
       urls.forEach(function (url) {
         const post = posts.get(url);
@@ -175,11 +216,12 @@
         }
       });
       setMessage(err.message, true);
+      return null;
     }
   }
 
   // Floating panel: count and "send all new posts of this page".
-  let panel, panelText, panelButton, panelMessage;
+  let panel, panelText, panelButton, panelAuto, panelAutoText, panelMessage;
 
   function buildPanel() {
     panel = document.createElement("div");
@@ -195,9 +237,18 @@
       });
       if (urls.length) send(urls);
     });
+    const autoLabel = document.createElement("label");
+    autoLabel.className = "rsa-auto";
+    panelAuto = document.createElement("input");
+    panelAuto.type = "checkbox";
+    panelAuto.addEventListener("change", function () {
+      setAuto(panelAuto.checked);
+    });
+    panelAutoText = document.createElement("span");
+    autoLabel.append(panelAuto, panelAutoText);
     panelMessage = document.createElement("div");
     panelMessage.className = "rsa-message";
-    panel.append(panelText, panelButton, panelMessage);
+    panel.append(panelText, panelButton, autoLabel, panelMessage);
     document.body.appendChild(panel);
   }
 
@@ -212,7 +263,9 @@
     panelText.textContent = "Reddit → Stash: " + fresh + " new, " + stored + " in Stash ";
     panelButton.textContent = "Send " + fresh + " new";
     panelButton.disabled = fresh === 0;
-    panel.style.display = posts.size ? "" : "none";
+    panelAuto.checked = autoEnabled();
+    panelAutoText.textContent = " Auto: send new posts of profiles and subreddits (Hot, " + autoCount() + " posts)";
+    panel.style.display = posts.size || listingInfo() ? "" : "none";
   }
 
   function setMessage(text, isError) {
@@ -263,6 +316,130 @@
     if (queued.length && token()) lookup(queued);
   }, REFRESH_QUEUED_MS);
 
+  // Auto mode: on a profile or subreddit, switch to Hot, load about autoCount() posts and send the new ones.
+  // Profiles: /user/NAME[/submitted|/posts|/overview][/], subreddits: /r/NAME[/SORT][/].
+  function listingInfo() {
+    const parts = location.pathname.split("/").filter(Boolean);
+    const sortParam = new URLSearchParams(location.search).get("sort");
+    if ((parts[0] === "user" || parts[0] === "u") && parts[1]) {
+      const tab = parts[2] || "";
+      if (parts.length > 3 || ["", "submitted", "posts", "overview"].indexOf(tab) === -1) return null;
+      const sort = tab === "submitted" || tab === "posts" ? sortParam : null;
+      return {
+        sort: sort,
+        hotUrl: location.origin + "/user/" + parts[1] + "/submitted/?sort=hot",
+      };
+    }
+    if (parts[0] === "r" && parts[1] && parts[1] !== "all" && parts[1] !== "popular") {
+      if (parts.length > 3 || (parts[2] && SORTS.indexOf(parts[2]) === -1)) return null;
+      return {
+        sort: parts[2] || sortParam,
+        hotUrl: location.origin + "/r/" + parts[1] + "/hot/",
+      };
+    }
+    return null;
+  }
+
+  function sleep(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  let autoRun = 0;
+
+  function stopAuto() {
+    autoRun += 1;
+  }
+
+  function startAuto() {
+    const run = ++autoRun;
+    if (!autoEnabled()) return;
+    const info = listingInfo();
+    if (!info) return;
+    if (!token()) {
+      setMessage("Auto: set agent URL and token first (userscript menu → Reddit → Stash: settings)", true);
+      return;
+    }
+    if (!info.sort) {
+      // No sort chosen yet (profiles default to New): switch to Hot once. An explicit sort is kept.
+      const key = "rsa-hot:" + location.pathname;
+      let switched = false;
+      try {
+        switched = sessionStorage.getItem(key) === "1";
+        sessionStorage.setItem(key, "1");
+      } catch (e) {
+        // storage blocked: switch anyway, Reddit keeps the sort in the URL
+      }
+      if (!switched && info.hotUrl !== location.href) {
+        setMessage("Auto: switching to Hot …", false);
+        location.replace(info.hotUrl);
+        return;
+      }
+    }
+    setTimeout(function () {
+      runAuto(run);
+    }, AUTO_START_DELAY_MS);
+  }
+
+  async function runAuto(run) {
+    const target = autoCount();
+    let idle = 0;
+    scan();
+    while (posts.size < target && idle < AUTO_MAX_IDLE_SCROLLS) {
+      if (run !== autoRun) return;
+      setMessage("Auto: loading posts " + posts.size + "/" + target + " …", false);
+      const before = posts.size;
+      // Step back a little first: when the page already sits at the bottom, scrolling down alone
+      // does not make Reddit load more.
+      window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - 2 * window.innerHeight));
+      await sleep(200);
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      await sleep(AUTO_SCROLL_WAIT_MS);
+      scan();
+      idle = posts.size > before ? 0 : idle + 1;
+    }
+    if (run !== autoRun) return;
+    window.scrollTo(0, 0);
+
+    // Wait until the agent has said which posts it already has.
+    while (pendingLookups.size) {
+      await Promise.allSettled(Array.from(pendingLookups));
+    }
+    if (run !== autoRun) return;
+
+    const urls = [];
+    let stored = 0;
+    Array.from(posts.values())
+      .slice(0, target)
+      .forEach(function (post) {
+        if (post.status === "new" || post.status === "unknown") urls.push(post.url);
+        if (post.status === "downloaded" || post.status === "queued") stored += 1;
+      });
+    if (!urls.length) {
+      setMessage("Auto: nothing new in the first " + Math.min(posts.size, target) + " posts (" + stored + " in Stash)", false);
+      return;
+    }
+    const counts = await send(urls, true);
+    if (counts) setMessage("Auto: " + (counts.queued || 0) + " new sent to Stash, " + stored + " already there", false);
+  }
+
+  // Reddit changes pages without reloading: start over when the address changes.
+  let lastHref = location.href;
+  setInterval(function () {
+    if (location.href === lastHref) return;
+    lastHref = location.href;
+    stopAuto();
+    posts.clear();
+    document.querySelectorAll(".rsa-post-button").forEach(function (button) {
+      button.remove();
+    });
+    updatePanel();
+    setMessage(null);
+    scan();
+    startAuto();
+  }, 1000);
+
   const style = document.createElement("style");
   style.textContent = `
     .rsa-button { margin: 4px 0; padding: 2px 10px; border-radius: 999px; border: 1px solid #ff4500;
@@ -276,6 +453,8 @@
       box-shadow: 0 4px 16px rgba(0,0,0,.4); }
     .rsa-panel .rsa-button { margin-left: 6px; }
     .rsa-panel .rsa-button:disabled { background: #555; border-color: #555; }
+    .rsa-auto { display: block; margin-top: 6px; cursor: pointer; }
+    .rsa-auto input { vertical-align: middle; }
     .rsa-message { margin-top: 4px; color: #9be29b; }
     .rsa-message.rsa-error { color: #ff8a80; }
   `;
@@ -285,5 +464,7 @@
     scheduleScan(false);
   }).observe(document.body, { childList: true, subtree: true });
 
+  updatePanel();
   scan();
+  startAuto();
 })();
