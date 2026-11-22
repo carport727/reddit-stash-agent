@@ -40,3 +40,12 @@ def test_lock_is_exclusive():
         except sync_state.SyncAlreadyRunning:
             pass
     assert not sync_state.is_sync_running()
+
+
+def test_sync_skips_rss_unless_enabled():
+    from app.commands import sync
+
+    labels = [label for label, _ in sync.steps({"reddit": {}})]
+    assert "RSS scan" not in labels and labels[0] == "Sync Reddit performer sources"
+    labels = [label for label, _ in sync.steps({"reddit": {"rss_scan": True}})]
+    assert labels[1] == "RSS scan" and len(labels) == len(sync.STEPS) + 1

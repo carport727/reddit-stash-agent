@@ -54,7 +54,7 @@ def run_sync(config):
     try:
         with sync_lock():
             signal.signal(signal.SIGTERM, _raise_cancelled)
-            mark_running(trigger, len(sync.STEPS), os.environ.get("SYNC_LOG_FILE"))
+            mark_running(trigger, len(sync.steps(config)), os.environ.get("SYNC_LOG_FILE"))
             try:
                 summary = sync.run(config, on_step=mark_step)
             except (SyncCancelled, KeyboardInterrupt):

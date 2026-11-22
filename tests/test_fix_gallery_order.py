@@ -79,3 +79,12 @@ def test_run_renames_gallery_files_in_reddit_order(tmp_path, monkeypatch):
 
     # Second run: nothing left to do.
     assert fix_gallery_order.run(config)["renamed"] == 0
+
+
+def test_gallery_dl_options_block_linked_profiles(monkeypatch):
+    from app.commands import download
+
+    monkeypatch.setattr(download, "gallery_dl_cookie_file", lambda *a: None)
+    options = download.gallery_dl_options({"reddit": {"cookies": "x"}, "downloads": {}})
+    assert "blacklist=" + download.CHILD_BLACKLIST in options
+    assert "*:user" in download.CHILD_BLACKLIST

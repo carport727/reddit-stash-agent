@@ -21,6 +21,11 @@ MAX_CONSECUTIVE_BLOCKS = 3
 # have num 0 and keep "{id} {filename}".
 FILENAME_FORMAT = "{id}{num:? //>02} {filename}.{extension}"
 
+# A post can link to a whole profile or search (e.g. redgifs.com/users/NAME); gallery-dl would then
+# download that entire account and the import would link all of it to the post's performer.
+# Only the media of the post itself is wanted.
+CHILD_BLACKLIST = "*:user,*:search,*:collections,*:niches,redgifs:collection"
+
 
 def is_blocked(output):
     text = f"{output.stderr}\n{output.stdout}".lower()
@@ -61,7 +66,8 @@ def extract_downloaded_paths(stdout, download_root):
 
 
 def gallery_dl_options(config):
-    """Extra gallery-dl arguments: optional config file, Reddit cookies, browser emulation.
+    """Extra gallery-dl arguments: optional config file, Reddit cookies, browser emulation, and no
+    downloads of whole profiles linked from a post.
 
     Reddit blocks plain gallery-dl requests; logged-in cookies plus Firefox headers get through.
     """
@@ -76,6 +82,7 @@ def gallery_dl_options(config):
     browser = config["downloads"].get("gallery_dl_browser")
     if browser:
         options += ["-o", f"browser={browser}"]
+    options += ["-o", f"blacklist={CHILD_BLACKLIST}"]
     return options
 
 

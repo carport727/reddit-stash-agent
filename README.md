@@ -16,8 +16,8 @@ Stash UI / Stashfeed ──GraphQL──▶ Stash ──plugin──▶ Agent AP
 
 > **Alpha.** The database schema, commands and config can still change between minor versions.
 
-> **Reddit shut down its RSS feeds in November 2026.** The sync can no longer discover new posts by itself (step 2
-> reports every feed as failed). Send posts from your browser instead (see
+> **Reddit shut down its RSS feeds in November 2026.** The sync can no longer discover new posts by itself, so it
+> skips the RSS scan (set `reddit.rss_scan: true` in `config/config.yaml` to run it anyway). Send posts from your browser instead (see
 > [Send posts from the browser](#send-posts-from-the-browser)), share them from the phone through Stashfeed, or use
 > "Download Reddit Post" in Stash. Downloads, imports, galleries and performer links work as before.
 
@@ -27,13 +27,15 @@ A Reddit source is a Reddit URL on a Stash performer, e.g. `https://www.reddit.c
 `https://www.reddit.com/r/NAME`. Each sync runs these steps:
 
 1. **Sources** – read the Reddit URLs of all performers. Removing a URL in Stash stops that source.
-2. **RSS scan** – fetch the newest posts of each source. *Reddit no longer serves these feeds (since November 2026).*
-3. **Download** – download new posts with gallery-dl. A failing post is retried, up to `max_attempts` times.
-4. **Import** – start a Stash scan of the download folder, wait for it, and remember the new scene and image IDs.
+2. **Download** – download posts that are still pending (for example after a failed attempt) with gallery-dl. A failing
+   post is retried, up to `max_attempts` times.
+3. **Import** – start a Stash scan of the download folder, wait for it, and remember the new scene and image IDs.
    Covers and previews are generated for new scenes.
-5. **Reconcile** – recover files Stash found that gallery-dl did not report.
-6. **Galleries** – one gallery per post with images, titled after the post, with the post URL.
-7. **Performers** – add the performer to every new scene, image and gallery. Existing performers are kept.
+4. **Reconcile** – recover files Stash found that gallery-dl did not report.
+5. **Galleries** – one gallery per post with images, titled after the post, with the post URL.
+6. **Performers** – add the performer to every new scene, image and gallery. Existing performers are kept.
+
+Only with `reddit.rss_scan: true` an **RSS scan** runs after step 1 (Reddit no longer serves these feeds).
 
 Every step is idempotent: running a sync again only does what is still missing.
 

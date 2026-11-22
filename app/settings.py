@@ -17,6 +17,8 @@ DEFAULTS = {
     "reddit": {
         "cookies": "/config/reddit-cookies.json",
         "request_delay_seconds": 2,
+        # Reddit shut down its RSS feeds in November 2026; the sync skips the RSS scan unless this is on.
+        "rss_scan": False,
     },
     "downloads": {
         "root": "/Stash/Download/Reddit",

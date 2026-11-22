@@ -121,6 +121,12 @@ def run(config, dry_run=False, limit=None):
                     if not NUMBERED_NAME.match(os.path.basename(row.path)):
                         unmatched += 1
                     continue
+                if not os.path.exists(row.path) and os.path.exists(new_path):
+                    # Renamed by an earlier, interrupted run: only the database is behind.
+                    if not dry_run:
+                        row.path = new_path
+                    folders.add(os.path.dirname(new_path))
+                    continue
                 if os.path.exists(new_path) or not os.path.exists(row.path):
                     unmatched += 1
                     continue

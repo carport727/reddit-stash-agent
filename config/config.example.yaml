@@ -11,8 +11,10 @@ reddit:
   # Cookies of a logged-in Reddit session, used for RSS and gallery-dl. Without them Reddit blocks
   # downloads. Browser export as JSON (list of {name, value, domain, ...}) or Netscape cookies.txt.
   cookies: /config/reddit-cookies.json
-  # Pause between RSS requests, to avoid Reddit rate limits.
+  # Pause between Reddit requests (RSS, fix_gallery_order), to avoid Reddit rate limits.
   request_delay_seconds: 2
+  # Reddit shut down its RSS feeds in November 2026, so the sync skips the RSS scan by default.
+  rss_scan: false
 
 downloads:
   # Folder inside a Stash library. The path must be identical in Stash and in this container.
