@@ -31,6 +31,8 @@ Tools:
   stash_stats                   counts from the agent database
   test_rss user|subreddit NAME  show the first posts of a feed
   test_gallerydl URL            download one URL with gallery-dl
+  fix_gallery_order [--dry-run] [--limit N]
+                                number older gallery files in Reddit's order and rescan them
 """
 
 
@@ -127,6 +129,16 @@ def main(argv):
         except PostDownloadError as exc:
             print(f"ERROR ({exc.code}): {exc}")
             return 1
+        return 0
+
+    if command == "fix_gallery_order":
+        from app.commands import fix_gallery_order
+
+        limit = None
+        if "--limit" in args:
+            position = args.index("--limit")
+            limit = int(args[position + 1]) if position + 1 < len(args) else None
+        fix_gallery_order.run(config, dry_run="--dry-run" in args, limit=limit)
         return 0
 
     if command == "test_gallerydl":

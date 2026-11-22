@@ -320,6 +320,9 @@ docker compose run --rm reddit-stash-agent COMMAND
 | `test_rss user NAME` / `test_rss subreddit NAME` | show the first posts of a feed |
 | `download_post URL` | download one post and import it into Stash (same as `/api/download`, prints the result) |
 | `test_gallerydl URL` | download one URL |
+| `fix_gallery_order [--dry-run] [--limit N]` | renames gallery files downloaded before 0.10.1 so Stash shows them in Reddit's order (one Reddit request per gallery post, then a Stash rescan; images, tags and performers are kept) |
+
+Since 0.10.1 files of gallery posts are saved as `{id} {num} {filename}`, so Stash shows them in Reddit's order.
 
 Set `dry_run: true` to print the gallery and performer changes instead of writing them.
 

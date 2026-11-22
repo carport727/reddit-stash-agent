@@ -6,7 +6,7 @@ from app.database.database import SessionLocal
 from app.database.models import DownloadedFile, RedditPost
 from app.stash.client import StashClient
 
-# Files are saved as "{id} {filename}.{extension}", where id is the Reddit post id.
+# Files are saved as "{id} [{num} ]{filename}.{extension}", where id is the Reddit post id.
 REDDIT_ID_PATTERN = re.compile(r"^([a-z0-9]+)(?:\s|$)", re.IGNORECASE)
 
 

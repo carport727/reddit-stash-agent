@@ -16,6 +16,11 @@ GALLERY_DL_COOKIES = os.path.join(DATA_DIR, "gallery-dl-cookies.txt")
 BLOCK_MARKERS = ("blocked by network security", "too many requests", "403 forbidden", "429")
 MAX_CONSECUTIVE_BLOCKS = 3
 
+# "{id} {num} {filename}": the post ID first (the import matches files to posts by it), then the
+# position inside a gallery post, so Stash shows gallery images in Reddit's order. Single-media posts
+# have num 0 and keep "{id} {filename}".
+FILENAME_FORMAT = "{id}{num:? //>02} {filename}.{extension}"
+
 
 def is_blocked(output):
     text = f"{output.stderr}\n{output.stdout}".lower()
@@ -75,7 +80,7 @@ def gallery_dl_options(config):
 
 
 def run_gallery_dl(url, download_root, options=()):
-    command = ["gallery-dl", "-d", download_root, "--filename", "{id} {filename}.{extension}", *options]
+    command = ["gallery-dl", "-d", download_root, "--filename", FILENAME_FORMAT, *options]
 
     return subprocess.run(
         command + [url],
